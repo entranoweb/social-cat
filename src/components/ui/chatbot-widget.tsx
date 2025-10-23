@@ -35,22 +35,126 @@ const TypingIndicator = () => (
   </div>
 );
 
+// Smooth streaming markdown component with fade-in effect
+const StreamingMarkdown = ({ content, isStreaming }: { content: string; isStreaming?: boolean }) => {
+  const [displayContent, setDisplayContent] = useState('');
+  const animationFrameRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    if (!isStreaming) {
+      setDisplayContent(content);
+      return;
+    }
+
+    // Smooth character reveal
+    const targetLength = content.length;
+    const currentLength = displayContent.length;
+
+    if (targetLength > currentLength) {
+      const diff = targetLength - currentLength;
+      const duration = Math.min(diff * 8, 100); // Smooth animation duration
+      const startTime = Date.now();
+
+      const animate = () => {
+        const elapsed = Date.now() - startTime;
+        const progress = Math.min(elapsed / duration, 1);
+
+        // Ease-out curve for smoother appearance
+        const eased = 1 - Math.pow(1 - progress, 3);
+        const newLength = Math.floor(currentLength + (diff * eased));
+
+        setDisplayContent(content.slice(0, newLength));
+
+        if (progress < 1) {
+          animationFrameRef.current = requestAnimationFrame(animate);
+        }
+      };
+
+      animationFrameRef.current = requestAnimationFrame(animate);
+    } else {
+      setDisplayContent(content);
+    }
+
+    return () => {
+      if (animationFrameRef.current) {
+        cancelAnimationFrame(animationFrameRef.current);
+      }
+    };
+  }, [content, isStreaming, displayContent]);
+
+  return (
+    <div className="relative">
+      <div className="text-sm text-black leading-normal tracking-tight prose prose-sm max-w-none">
+        <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
+          {displayContent}
+        </ReactMarkdown>
+      </div>
+      {isStreaming && (
+        <span className="inline-block w-1.5 h-4 bg-zinc-950 ml-0.5 animate-pulse" />
+      )}
+    </div>
+  );
+};
+
 export function ChatbotWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const isAutoScrollingRef = useRef(true);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = (smooth = false) => {
+    if (messagesContainerRef.current && isAutoScrollingRef.current) {
+      const container = messagesContainerRef.current;
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: smooth ? 'smooth' : 'auto',
+      });
+    }
   };
 
+  // Handle user scrolling to disable auto-scroll if they scroll up
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      isAutoScrollingRef.current = isNearBottom;
+    };
+
+    container.addEventListener('scroll', handleScroll, { passive: true });
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // Smooth scroll when chat opens or new message starts
   useEffect(() => {
     if (isOpen) {
-      scrollToBottom();
+      isAutoScrollingRef.current = true;
+      scrollToBottom(true);
     }
-  }, [messages, isOpen]);
+  }, [isOpen, messages.length]);
+
+  // Auto-scroll during streaming using ResizeObserver
+  useEffect(() => {
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    const resizeObserver = new ResizeObserver(() => {
+      scrollToBottom(false);
+    });
+
+    // Observe the container for size changes (happens during streaming)
+    resizeObserver.observe(container);
+
+    return () => {
+      resizeObserver.disconnect();
+    };
+  }, []);
 
   const handleSuggestedQuestion = async (question: string) => {
     setInputValue('');
@@ -80,6 +184,7 @@ export function ChatbotWidget() {
       let updateScheduled = false;
 
       const assistantMsgId = (Date.now() + 1).toString();
+      setStreamingMessageId(assistantMsgId);
 
       const scheduleUpdate = () => {
         if (!updateScheduled) {
@@ -117,6 +222,7 @@ export function ChatbotWidget() {
                 }];
               });
             }
+            setStreamingMessageId(null);
             break;
           }
 
@@ -127,6 +233,7 @@ export function ChatbotWidget() {
       }
     } catch (error) {
       console.error('Chat error:', error);
+      setStreamingMessageId(null);
     } finally {
       setIsLoading(false);
     }
@@ -162,6 +269,7 @@ export function ChatbotWidget() {
       let updateScheduled = false;
 
       const assistantMsgId = (Date.now() + 1).toString();
+      setStreamingMessageId(assistantMsgId);
 
       const scheduleUpdate = () => {
         if (!updateScheduled) {
@@ -199,6 +307,7 @@ export function ChatbotWidget() {
                 }];
               });
             }
+            setStreamingMessageId(null);
             break;
           }
 
@@ -209,6 +318,7 @@ export function ChatbotWidget() {
       }
     } catch (error) {
       console.error('Chat error:', error);
+      setStreamingMessageId(null);
     } finally {
       setIsLoading(false);
     }
@@ -241,7 +351,11 @@ export function ChatbotWidget() {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-3 shadow-inner [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-zinc-400">
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto px-5 py-5 space-y-3 shadow-inner [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-zinc-300 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:hover:bg-zinc-400"
+            style={{ scrollBehavior: 'auto' }}
+          >
             {messages.length === 0 ? (
               <div className="flex flex-col gap-3">
                 <div className="flex w-full">
@@ -293,11 +407,10 @@ export function ChatbotWidget() {
                                 </span>
                               </div>
                             )}
-                            <div className="text-sm text-black leading-normal tracking-tight prose prose-sm max-w-none">
-                              <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>
-                                {message.content}
-                              </ReactMarkdown>
-                            </div>
+                            <StreamingMarkdown
+                              content={message.content}
+                              isStreaming={streamingMessageId === message.id}
+                            />
                           </div>
                         </div>
                       </div>
