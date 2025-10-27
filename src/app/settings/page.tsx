@@ -3,11 +3,10 @@
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
-import { Twitter, Youtube, Instagram, Check, X, Loader2, Cat, Volume2 } from 'lucide-react';
+import { Twitter, Youtube, Instagram, Check, X, Loader2, Settings, Wand2 } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
-import { catSounds } from '@/lib/cat-sounds';
+import Link from 'next/link';
 
 interface TwitterStatus {
   connected: boolean;
@@ -25,33 +24,6 @@ export default function SettingsPage() {
   const [youtubeConnected, setYoutubeConnected] = useState(false);
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [instagramConnected, setInstagramConnected] = useState(false);
-  const [catMascotEnabled, setCatMascotEnabled] = useState(true);
-  const [catSoundsEnabled, setCatSoundsEnabled] = useState(false);
-
-  // Load cat mascot preference from localStorage
-  useEffect(() => {
-    const hidden = localStorage.getItem('cat-mascot-hidden') === 'true';
-    setCatMascotEnabled(!hidden);
-
-    const soundsEnabled = catSounds.isEnabled();
-    setCatSoundsEnabled(soundsEnabled);
-  }, []);
-
-  const handleCatMascotToggle = (enabled: boolean) => {
-    setCatMascotEnabled(enabled);
-    localStorage.setItem('cat-mascot-hidden', enabled ? 'false' : 'true');
-    // Reload to apply changes
-    window.location.reload();
-  };
-
-  const handleCatSoundsToggle = (enabled: boolean) => {
-    setCatSoundsEnabled(enabled);
-    catSounds.setEnabled(enabled);
-    // Play a test sound to confirm
-    if (enabled) {
-      catSounds.playMeow();
-    }
-  };
 
   // Fetch Twitter connection status on mount (only if authenticated)
   useEffect(() => {
@@ -191,9 +163,21 @@ export default function SettingsPage() {
     <DashboardLayout>
       <div className="p-6 space-y-6">
         {/* Header */}
-        <div className="space-y-1">
-          <h1 className="font-black text-2xl tracking-tight">⚙️😼 Settings</h1>
-          <p className="text-xs text-secondary">Connect your social media accounts</p>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Settings className="h-6 w-6 text-primary" />
+              <h1 className="font-black text-2xl tracking-tight">Settings</h1>
+            </div>
+            <p className="text-xs text-secondary">Connect your social media accounts</p>
+          </div>
+
+          <Link href="/setup">
+            <Button variant="default" className="gap-2">
+              <Wand2 className="h-4 w-4" />
+              Setup Wizard
+            </Button>
+          </Link>
         </div>
 
         {/* Platform Connections - One Row */}
@@ -305,47 +289,6 @@ export default function SettingsPage() {
           </Card>
         </div>
 
-        {/* App Preferences */}
-        <div className="space-y-3">
-          <h2 className="font-bold text-sm">App Preferences</h2>
-          <Card className="border-border bg-surface">
-            <CardContent className="p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Cat className="h-4 w-4 text-accent" />
-                  <div>
-                    <div className="text-sm font-medium">Cat Mascot</div>
-                    <div className="text-[10px] text-secondary">
-                      Show the interactive cat companion in the bottom-right corner
-                    </div>
-                  </div>
-                </div>
-                <Switch
-                  checked={catMascotEnabled}
-                  onCheckedChange={handleCatMascotToggle}
-                />
-              </div>
-
-              <div className="border-t border-border pt-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Volume2 className="h-4 w-4 text-accent" />
-                    <div>
-                      <div className="text-sm font-medium">Cat Sound Effects</div>
-                      <div className="text-[10px] text-secondary">
-                        Play adorable cat sounds when actions occur (meow, purr, hiss)
-                      </div>
-                    </div>
-                  </div>
-                  <Switch
-                    checked={catSoundsEnabled}
-                    onCheckedChange={handleCatSoundsToggle}
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </div>
     </DashboardLayout>
   );

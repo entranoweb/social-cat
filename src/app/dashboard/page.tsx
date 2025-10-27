@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Loader2, Twitter, Youtube } from 'lucide-react';
+import { Loader2, Twitter, Youtube, LayoutDashboard } from 'lucide-react';
 import { AnimatedCounter } from '@/components/ui/animated-counter';
 import { isMilestone, fireMilestoneConfetti } from '@/lib/confetti';
 
@@ -63,7 +63,10 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="space-y-1">
-          <h1 className="font-black text-2xl tracking-tight">🐱 Dashboard</h1>
+          <div className="flex items-center gap-2">
+            <LayoutDashboard className="h-6 w-6 text-primary" />
+            <h1 className="font-black text-2xl tracking-tight">Dashboard</h1>
+          </div>
           <p className="text-sm text-secondary">
             Monitor your social media automations
           </p>

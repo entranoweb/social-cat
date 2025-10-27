@@ -114,6 +114,7 @@ export const youtubeCommentsTableSQLite = sqliteTable('youtube_comments', {
   videoIdIdx: sqliteIndex('youtube_comments_video_id_idx').on(table.videoId),
   statusIdx: sqliteIndex('youtube_comments_status_idx').on(table.status),
   videoStatusIdx: sqliteIndex('youtube_comments_video_status_idx').on(table.videoId, table.status),
+  statusCreatedIdx: sqliteIndex('youtube_comments_status_created_idx').on(table.status, table.createdAt),
 }));
 
 // OAuth state table for SQLite (temporary storage during OAuth flow)
@@ -154,6 +155,7 @@ export const tweetRepliesTableSQLite = sqliteTable('tweet_replies', {
   statusIdx: sqliteIndex('tweet_replies_status_idx').on(table.status),
   createdAtIdx: sqliteIndex('tweet_replies_created_at_idx').on(table.createdAt),
   repliedAtIdx: sqliteIndex('tweet_replies_replied_at_idx').on(table.repliedAt),
+  originalTweetStatusIdx: sqliteIndex('tweet_replies_original_tweet_status_idx').on(table.originalTweetId, table.status),
 }));
 
 // App settings table for SQLite (stores user preferences and configurations)
@@ -164,7 +166,9 @@ export const appSettingsTableSQLite = sqliteTable('app_settings', {
   updatedAt: integer('updated_at', { mode: 'timestamp' })
     .notNull()
     .default(sql`(unixepoch())`),
-});
+}, (table) => ({
+  keyIdx: sqliteIndex('app_settings_key_idx').on(table.key),
+}));
 
 // For PostgreSQL (production)
 export const tweetsTablePostgres = pgTable('tweets', {
@@ -266,6 +270,7 @@ export const youtubeCommentsTablePostgres = pgTable('youtube_comments', {
   videoIdIdx: pgIndex('youtube_comments_video_id_idx').on(table.videoId),
   statusIdx: pgIndex('youtube_comments_status_idx').on(table.status),
   videoStatusIdx: pgIndex('youtube_comments_video_status_idx').on(table.videoId, table.status),
+  statusCreatedIdx: pgIndex('youtube_comments_status_created_idx').on(table.status, table.createdAt),
 }));
 
 // OAuth state table for PostgreSQL (temporary storage during OAuth flow)
@@ -302,6 +307,7 @@ export const tweetRepliesTablePostgres = pgTable('tweet_replies', {
   statusIdx: pgIndex('tweet_replies_status_idx').on(table.status),
   createdAtIdx: pgIndex('tweet_replies_created_at_idx').on(table.createdAt),
   repliedAtIdx: pgIndex('tweet_replies_replied_at_idx').on(table.repliedAt),
+  originalTweetStatusIdx: pgIndex('tweet_replies_original_tweet_status_idx').on(table.originalTweetId, table.status),
 }));
 
 // App settings table for PostgreSQL (stores user preferences and configurations)
@@ -310,10 +316,100 @@ export const appSettingsTablePostgres = pgTable('app_settings', {
   key: varchar('key', { length: 255 }).notNull().unique(),
   value: pgText('value').notNull(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+}, (table) => ({
+  keyIdx: pgIndex('app_settings_key_idx').on(table.key),
+}));
+
+// Job logs table for SQLite (tracks job execution history)
+export const jobLogsTableSQLite = sqliteTable('job_logs', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  jobName: text('job_name').notNull(), // e.g., 'reply-to-tweets'
+  status: text('status').notNull(), // success, error, warning
+  message: text('message').notNull(), // Main log message
+  details: text('details'), // JSON string with additional data
+  duration: integer('duration'), // Execution time in milliseconds
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+}, (table) => ({
+  jobNameIdx: sqliteIndex('job_logs_job_name_idx').on(table.jobName),
+  statusIdx: sqliteIndex('job_logs_status_idx').on(table.status),
+  createdAtIdx: sqliteIndex('job_logs_created_at_idx').on(table.createdAt),
+}));
+
+// Job logs table for PostgreSQL
+export const jobLogsTablePostgres = pgTable('job_logs', {
+  id: serial('id').primaryKey(),
+  jobName: varchar('job_name', { length: 255 }).notNull(),
+  status: varchar('status', { length: 50 }).notNull(), // success, error, warning
+  message: pgText('message').notNull(),
+  details: pgText('details'), // JSON string with additional data
+  duration: pgInteger('duration'), // Execution time in milliseconds
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  jobNameIdx: pgIndex('job_logs_job_name_idx').on(table.jobName),
+  statusIdx: pgIndex('job_logs_status_idx').on(table.status),
+  createdAtIdx: pgIndex('job_logs_created_at_idx').on(table.createdAt),
+}));
 
 // Determine which database to use based on environment
 const useSQLite = !process.env.DATABASE_URL;
+
+// Twitter usage tracking table for SQLite (atomic operations for rate limiting)
+export const twitterUsageTableSQLite = sqliteTable('twitter_usage', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  windowType: text('window_type').notNull().unique(), // '15min', '1hour', '24hour', 'daily', 'monthly'
+  postsCount: integer('posts_count').notNull().default(0),
+  readsCount: integer('reads_count').notNull().default(0),
+  windowStart: integer('window_start', { mode: 'timestamp' }).notNull(),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+}, (table) => ({
+  windowTypeIdx: sqliteIndex('twitter_usage_window_type_idx').on(table.windowType),
+  windowStartIdx: sqliteIndex('twitter_usage_window_start_idx').on(table.windowStart),
+}));
+
+// Twitter usage tracking table for PostgreSQL
+export const twitterUsageTablePostgres = pgTable('twitter_usage', {
+  id: serial('id').primaryKey(),
+  windowType: varchar('window_type', { length: 50 }).notNull().unique(),
+  postsCount: pgInteger('posts_count').notNull().default(0),
+  readsCount: pgInteger('reads_count').notNull().default(0),
+  windowStart: timestamp('window_start').notNull(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  windowTypeIdx: pgIndex('twitter_usage_window_type_idx').on(table.windowType),
+  windowStartIdx: pgIndex('twitter_usage_window_start_idx').on(table.windowStart),
+}));
+
+// API Credentials table for SQLite (encrypted storage)
+export const apiCredentialsTableSQLite = sqliteTable('api_credentials', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  key: text('key').notNull().unique(), // e.g., 'OPENAI_API_KEY', 'TWITTER_API_KEY'
+  value: text('value').notNull(), // Encrypted value
+  platform: text('platform').notNull(), // 'openai', 'twitter', 'youtube', 'instagram'
+  createdAt: integer('created_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+  updatedAt: integer('updated_at', { mode: 'timestamp' })
+    .notNull()
+    .default(sql`(unixepoch())`),
+}, (table) => ({
+  platformIdx: sqliteIndex('api_credentials_platform_idx').on(table.platform),
+}));
+
+// API Credentials table for PostgreSQL
+export const apiCredentialsTablePostgres = pgTable('api_credentials', {
+  id: serial('id').primaryKey(),
+  key: varchar('key', { length: 255 }).notNull().unique(),
+  value: pgText('value').notNull(), // Encrypted value
+  platform: varchar('platform', { length: 50 }).notNull(),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  platformIdx: pgIndex('api_credentials_platform_idx').on(table.platform),
+}));
 
 // Export the appropriate tables based on environment
 // This will be imported and used throughout the app
@@ -328,6 +424,9 @@ export const youtubeCommentsTable = useSQLite ? youtubeCommentsTableSQLite : you
 export const oauthStateTable = useSQLite ? oauthStateTableSQLite : oauthStateTablePostgres;
 export const tweetRepliesTable = useSQLite ? tweetRepliesTableSQLite : tweetRepliesTablePostgres;
 export const appSettingsTable = useSQLite ? appSettingsTableSQLite : appSettingsTablePostgres;
+export const jobLogsTable = useSQLite ? jobLogsTableSQLite : jobLogsTablePostgres;
+export const twitterUsageTable = useSQLite ? twitterUsageTableSQLite : twitterUsageTablePostgres;
+export const apiCredentialsTable = useSQLite ? apiCredentialsTableSQLite : apiCredentialsTablePostgres;
 
 export type Tweet = typeof tweetsTableSQLite.$inferSelect;
 export type NewTweet = typeof tweetsTableSQLite.$inferInsert;
@@ -349,3 +448,9 @@ export type TweetReply = typeof tweetRepliesTableSQLite.$inferSelect;
 export type NewTweetReply = typeof tweetRepliesTableSQLite.$inferInsert;
 export type AppSetting = typeof appSettingsTableSQLite.$inferSelect;
 export type NewAppSetting = typeof appSettingsTableSQLite.$inferInsert;
+export type JobLog = typeof jobLogsTableSQLite.$inferSelect;
+export type NewJobLog = typeof jobLogsTableSQLite.$inferInsert;
+export type TwitterUsage = typeof twitterUsageTableSQLite.$inferSelect;
+export type NewTwitterUsage = typeof twitterUsageTableSQLite.$inferInsert;
+export type APICredential = typeof apiCredentialsTableSQLite.$inferSelect;
+export type NewAPICredential = typeof apiCredentialsTableSQLite.$inferInsert;

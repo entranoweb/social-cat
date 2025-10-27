@@ -114,6 +114,37 @@ export function CompactAutomationRow({
     }
   };
 
+  // Control job (start/stop) via scheduler
+  const controlJob = async (action: 'start' | 'stop') => {
+    try {
+      const response = await fetch('/api/jobs/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          jobName,
+          interval, // Pass current interval
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        console.error(`Failed to ${action} job:`, data.error);
+        showApiError(data.error || `Failed to ${action} job`);
+        return false;
+      }
+
+      // Log success message
+      console.log(`✅ ${data.message}`);
+      return true;
+    } catch (error) {
+      console.error(`Error ${action}ing job:`, error);
+      showApiError(`Failed to ${action} job`);
+      return false;
+    }
+  };
+
   const handleTest = async () => {
     setTesting(true);
     setTestResult(null);
@@ -186,10 +217,12 @@ export function CompactAutomationRow({
       <div className="flex items-center gap-3 flex-1 min-w-0">
         <Switch
           checked={enabled}
-          onCheckedChange={(checked) => {
+          onCheckedChange={async (checked) => {
             setEnabled(checked);
-            // Save immediately with the new value
-            saveSettings({ enabled: checked });
+            // Save to database
+            await saveSettings({ enabled: checked });
+            // Control the scheduler (start/stop the job)
+            await controlJob(checked ? 'start' : 'stop');
           }}
           disabled={loading}
         />
@@ -209,7 +242,14 @@ export function CompactAutomationRow({
               <span>Schedule</span>
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-md bg-surface border-border" onCloseAutoFocus={() => saveSettings()}>
+          <DialogContent className="sm:max-w-md bg-surface border-border" onCloseAutoFocus={async () => {
+            await saveSettings();
+            // If job is enabled, restart it with the new schedule
+            if (enabled) {
+              await controlJob('stop');
+              await controlJob('start');
+            }
+          }}>
             <DialogHeader>
               <DialogTitle className="text-base font-black">Schedule</DialogTitle>
               <DialogDescription className="text-xs text-secondary">

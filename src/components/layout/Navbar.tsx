@@ -2,52 +2,56 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LayoutDashboard, Twitter, Youtube, Instagram, Settings, Cat, FlaskConical, BarChart3 } from 'lucide-react';
+import { Cat } from 'lucide-react';
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-  { name: 'Twitter', href: '/twitter', icon: Twitter },
-  { name: 'YouTube', href: '/youtube', icon: Youtube },
-  { name: 'Instagram', href: '/instagram', icon: Instagram },
-  { name: 'Limits', href: '/dashboard/limits', icon: BarChart3 },
-  { name: 'Test Replies', href: '/dashboard/test-replies', icon: FlaskConical },
-  { name: 'Settings', href: '/settings', icon: Settings },
+  { name: 'Dashboard', href: '/dashboard' },
+  { name: 'Twitter', href: '/twitter' },
+  { name: 'YouTube', href: '/youtube' },
+  { name: 'Instagram', href: '/instagram' },
+  { name: 'Activity', href: '/dashboard/activity' },
+  { name: 'Limits', href: '/dashboard/limits' },
+  { name: 'Test', href: '/dashboard/test-replies' },
+  { name: 'Settings', href: '/settings' },
 ];
 
 export function Navbar() {
   const pathname = usePathname();
 
   return (
-    <nav className="border-b border-border bg-background">
-      <div className="flex h-12 items-center justify-between px-4">
-        {/* Logo */}
-        <Link href="/dashboard" className="flex items-center gap-1.5">
-          <Cat className="h-3.5 w-3.5" />
-          <span className="font-black text-xs tracking-tight">SOCIAL CAT</span>
+    <nav className="border-b border-border/50 bg-background">
+      <div className="flex h-16 items-center px-8">
+        {/* Left: Logo */}
+        <Link href="/dashboard" className="flex items-center group">
+          <Cat className="h-[18px] w-[18px] text-foreground/90 transition-all duration-200 group-hover:text-foreground group-hover:scale-110" />
         </Link>
 
-        {/* Navigation Links */}
-        <div className="flex items-center gap-1">
+        {/* Center-Left: Brand Name */}
+        <div className="ml-10 flex-shrink-0">
+          <span className="text-[13px] font-light tracking-tight text-muted-foreground/60">
+            Social Cat
+          </span>
+        </div>
+
+        {/* Right: Navigation Links */}
+        <div className="ml-auto flex items-center gap-8">
           {navigation.map((item) => {
             const isActive = pathname === item.href;
-            const Icon = item.icon;
 
             return (
               <Link
                 key={item.name}
                 href={item.href}
                 className={`
-                  flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs
-                  transition-colors duration-150
+                  text-[13px] font-light tracking-tight transition-all duration-200
                   ${
                     isActive
-                      ? 'bg-surface text-text-primary'
-                      : 'text-text-muted hover:bg-surface hover:text-text-primary'
+                      ? 'text-foreground/90'
+                      : 'text-muted-foreground/60 hover:text-foreground/90'
                   }
                 `}
               >
-                <Icon className="h-3.5 w-3.5" />
-                <span>{item.name}</span>
+                {item.name}
               </Link>
             );
           })}

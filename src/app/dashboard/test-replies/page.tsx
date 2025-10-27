@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Heart, Repeat2, MessageCircle, Eye, FlaskConical, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Heart, Repeat2, MessageCircle, Eye, FlaskConical, AlertTriangle, CheckCircle, TestTube2 } from 'lucide-react';
 import { showTwitter403Error, showTwitter429Error, showApiError } from '@/lib/toast-helpers';
 
 interface TestResult {
@@ -92,7 +92,10 @@ export default function TestRepliesPage() {
       <div className="p-6 space-y-4">
         {/* Header */}
         <div className="space-y-1">
-          <h1 className="font-black text-2xl tracking-tight">🧪🐱 Test Tweet Replies</h1>
+          <div className="flex items-center gap-2">
+            <TestTube2 className="h-6 w-6 text-blue-500" />
+            <h1 className="font-black text-2xl tracking-tight">Test Tweet Replies</h1>
+          </div>
           <p className="text-sm text-secondary">
             Test and refine your reply prompts without posting to Twitter
           </p>

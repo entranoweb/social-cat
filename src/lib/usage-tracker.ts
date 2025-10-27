@@ -1,11 +1,12 @@
 /**
  * Client-side and server-side usage tracking helper
  *
- * Tracks Twitter API usage for rate limit monitoring
+ * Tracks Twitter API usage for rate limit monitoring using atomic SQL operations
  */
 
 import { logger } from './logger';
 import { db, useSQLite } from './db';
+import { sql, eq } from 'drizzle-orm';
 
 export async function trackTwitterUsage(type: 'post' | 'read'): Promise<void> {
   try {
@@ -32,133 +33,138 @@ export async function trackTwitterUsage(type: 'post' | 'read'): Promise<void> {
 }
 
 /**
- * Direct database tracking (server-side only)
+ * Direct database tracking (server-side only) using atomic SQL operations
  */
 async function trackUsageDirectly(type: 'post' | 'read'): Promise<void> {
-  const usageKey = type === 'post' ? 'twitter_post_usage' : 'twitter_read_usage';
-
   try {
-    const { eq } = await import('drizzle-orm');
-
     if (useSQLite) {
-      // SQLite path
-      const { appSettingsTableSQLite } = await import('./schema');
+      // SQLite path - use new twitter_usage table
+      const { twitterUsageTableSQLite } = await import('./schema');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const typedDb = db as any;
 
-      const existingRows = await typedDb
-        .select()
-        .from(appSettingsTableSQLite)
-        .where(eq(appSettingsTableSQLite.key, usageKey));
+      const now = new Date();
+      const columnToIncrement = type === 'post' ? 'postsCount' : 'readsCount';
 
-      const existing = existingRows[0];
-      const now = Date.now();
+      // Window durations in ms
+      const windows = [
+        { type: 'last_15_minutes', duration: 15 * 60 * 1000 },
+        { type: 'last_hour', duration: 60 * 60 * 1000 },
+        { type: 'last_24_hours', duration: 24 * 60 * 60 * 1000 },
+        { type: 'last_month', duration: 30 * 24 * 60 * 60 * 1000 },
+      ];
 
-      const usage = existing
-        ? JSON.parse(existing.value)
-        : {
-            window15min: { count: 0, resetAt: now + 15 * 60 * 1000 },
-            window1hr: { count: 0, resetAt: now + 60 * 60 * 1000 },
-            window24hr: { count: 0, resetAt: now + 24 * 60 * 60 * 1000 },
-            window30days: { count: 0, resetAt: now + 30 * 24 * 60 * 60 * 1000 },
-          };
+      for (const window of windows) {
+        // Check if window exists and is expired
+        const existing = await typedDb
+          .select()
+          .from(twitterUsageTableSQLite)
+          .where(eq(twitterUsageTableSQLite.windowType, window.type))
+          .limit(1);
 
-      // Reset expired windows
-      if (usage.window15min.resetAt < now) {
-        usage.window15min = { count: 0, resetAt: now + 15 * 60 * 1000 };
+        if (existing.length === 0) {
+          // Create new window
+          await typedDb.insert(twitterUsageTableSQLite).values({
+            windowType: window.type,
+            postsCount: type === 'post' ? 1 : 0,
+            readsCount: type === 'read' ? 1 : 0,
+            windowStart: now,
+            updatedAt: now,
+          });
+        } else {
+          const record = existing[0];
+          const windowStart = new Date(record.windowStart);
+          const elapsed = now.getTime() - windowStart.getTime();
+
+          if (elapsed > window.duration) {
+            // Reset expired window
+            await typedDb
+              .update(twitterUsageTableSQLite)
+              .set({
+                postsCount: type === 'post' ? 1 : 0,
+                readsCount: type === 'read' ? 1 : 0,
+                windowStart: now,
+                updatedAt: now,
+              })
+              .where(eq(twitterUsageTableSQLite.windowType, window.type));
+          } else {
+            // Atomic increment
+            await typedDb
+              .update(twitterUsageTableSQLite)
+              .set({
+                [columnToIncrement]: sql`${twitterUsageTableSQLite[columnToIncrement]} + 1`,
+                updatedAt: now,
+              })
+              .where(eq(twitterUsageTableSQLite.windowType, window.type));
+          }
+        }
       }
-      if (usage.window1hr.resetAt < now) {
-        usage.window1hr = { count: 0, resetAt: now + 60 * 60 * 1000 };
-      }
-      if (usage.window24hr.resetAt < now) {
-        usage.window24hr = { count: 0, resetAt: now + 24 * 60 * 60 * 1000 };
-      }
-      if (usage.window30days.resetAt < now) {
-        usage.window30days = { count: 0, resetAt: now + 30 * 24 * 60 * 60 * 1000 };
-      }
 
-      // Increment all windows
-      usage.window15min.count++;
-      usage.window1hr.count++;
-      usage.window24hr.count++;
-      usage.window30days.count++;
-
-      // Save back to database
-      if (existing) {
-        const { sql } = await import('drizzle-orm');
-        await typedDb
-          .update(appSettingsTableSQLite)
-          .set({
-            value: JSON.stringify(usage),
-            updatedAt: sql`(unixepoch())`
-          })
-          .where(eq(appSettingsTableSQLite.key, usageKey));
-      } else {
-        await typedDb
-          .insert(appSettingsTableSQLite)
-          .values({ key: usageKey, value: JSON.stringify(usage) });
-      }
-
-      logger.debug({ type, usage }, 'Tracked Twitter API usage (direct)');
+      logger.debug({ type }, 'Tracked Twitter API usage (direct, atomic)');
     } else {
-      // PostgreSQL path
-      const { appSettingsTablePostgres } = await import('./schema');
+      // PostgreSQL path - use new twitter_usage table
+      const { twitterUsageTablePostgres } = await import('./schema');
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const typedDb = db as any;
 
-      const existingRows = await typedDb
-        .select()
-        .from(appSettingsTablePostgres)
-        .where(eq(appSettingsTablePostgres.key, usageKey));
+      const now = new Date();
+      const columnToIncrement = type === 'post' ? 'postsCount' : 'readsCount';
 
-      const existing = existingRows[0];
-      const now = Date.now();
+      // Window durations in ms
+      const windows = [
+        { type: 'last_15_minutes', duration: 15 * 60 * 1000 },
+        { type: 'last_hour', duration: 60 * 60 * 1000 },
+        { type: 'last_24_hours', duration: 24 * 60 * 60 * 1000 },
+        { type: 'last_month', duration: 30 * 24 * 60 * 60 * 1000 },
+      ];
 
-      const usage = existing
-        ? JSON.parse(existing.value)
-        : {
-            window15min: { count: 0, resetAt: now + 15 * 60 * 1000 },
-            window1hr: { count: 0, resetAt: now + 60 * 60 * 1000 },
-            window24hr: { count: 0, resetAt: now + 24 * 60 * 60 * 1000 },
-            window30days: { count: 0, resetAt: now + 30 * 24 * 60 * 60 * 1000 },
-          };
+      for (const window of windows) {
+        // Check if window exists and is expired
+        const existing = await typedDb
+          .select()
+          .from(twitterUsageTablePostgres)
+          .where(eq(twitterUsageTablePostgres.windowType, window.type))
+          .limit(1);
 
-      // Reset expired windows
-      if (usage.window15min.resetAt < now) {
-        usage.window15min = { count: 0, resetAt: now + 15 * 60 * 1000 };
+        if (existing.length === 0) {
+          // Create new window
+          await typedDb.insert(twitterUsageTablePostgres).values({
+            windowType: window.type,
+            postsCount: type === 'post' ? 1 : 0,
+            readsCount: type === 'read' ? 1 : 0,
+            windowStart: now,
+            updatedAt: now,
+          });
+        } else {
+          const record = existing[0];
+          const windowStart = new Date(record.windowStart);
+          const elapsed = now.getTime() - windowStart.getTime();
+
+          if (elapsed > window.duration) {
+            // Reset expired window
+            await typedDb
+              .update(twitterUsageTablePostgres)
+              .set({
+                postsCount: type === 'post' ? 1 : 0,
+                readsCount: type === 'read' ? 1 : 0,
+                windowStart: now,
+                updatedAt: now,
+              })
+              .where(eq(twitterUsageTablePostgres.windowType, window.type));
+          } else {
+            // Atomic increment
+            await typedDb
+              .update(twitterUsageTablePostgres)
+              .set({
+                [columnToIncrement]: sql`${twitterUsageTablePostgres[columnToIncrement]} + 1`,
+                updatedAt: now,
+              })
+              .where(eq(twitterUsageTablePostgres.windowType, window.type));
+          }
+        }
       }
-      if (usage.window1hr.resetAt < now) {
-        usage.window1hr = { count: 0, resetAt: now + 60 * 60 * 1000 };
-      }
-      if (usage.window24hr.resetAt < now) {
-        usage.window24hr = { count: 0, resetAt: now + 24 * 60 * 60 * 1000 };
-      }
-      if (usage.window30days.resetAt < now) {
-        usage.window30days = { count: 0, resetAt: now + 30 * 24 * 60 * 60 * 1000 };
-      }
 
-      // Increment all windows
-      usage.window15min.count++;
-      usage.window1hr.count++;
-      usage.window24hr.count++;
-      usage.window30days.count++;
-
-      // Save back to database
-      if (existing) {
-        await typedDb
-          .update(appSettingsTablePostgres)
-          .set({
-            value: JSON.stringify(usage),
-            updatedAt: new Date()
-          })
-          .where(eq(appSettingsTablePostgres.key, usageKey));
-      } else {
-        await typedDb
-          .insert(appSettingsTablePostgres)
-          .values({ key: usageKey, value: JSON.stringify(usage) });
-      }
-
-      logger.debug({ type, usage }, 'Tracked Twitter API usage (direct)');
+      logger.debug({ type }, 'Tracked Twitter API usage (direct, atomic)');
     }
   } catch (error) {
     logger.error({ error, type }, 'Failed to track usage directly');

@@ -174,8 +174,15 @@ export const rapidApiAxios = createAxiosWithRetry({
   retries: 4,
   timeout: 10000,
   retryCondition: (error) => {
-    // RapidAPI specific: Retry on 429 (rate limit)
-    if (error.response?.status === 429) return true;
+    // Don't retry on 429 - could be quota exhausted (not temporary rate limit)
+    // Retrying wastes time and makes more failed requests
+    if (error.response?.status === 429) return false;
+
+    // Don't retry on other 4xx errors (auth, validation, etc.)
+    if (error.response?.status && error.response.status >= 400 && error.response.status < 500) {
+      return false;
+    }
+
     return isNetworkOrIdempotentRequestError(error);
   },
 });

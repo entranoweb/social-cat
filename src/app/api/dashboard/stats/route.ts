@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { db, useSQLite } from '@/lib/db';
 import { tweetsTable, youtubeCommentsTable, tweetRepliesTable, appSettingsTable } from '@/lib/schema';
-import { eq, count, sql } from 'drizzle-orm';
+import { eq, count, and, like } from 'drizzle-orm';
 
 export async function GET() {
   try {
@@ -35,20 +35,16 @@ export async function GET() {
         .from(youtubeCommentsTable)
         .where(eq(youtubeCommentsTable.status, 'replied')) as Promise<Array<{ count: number }>>,
 
-      // Count enabled automations
-      dbAny.select()
+      // Count enabled automations (efficient database COUNT)
+      dbAny.select({ count: count() })
         .from(appSettingsTable)
-        .where(sql`${appSettingsTable.key} LIKE '%_enabled'`) as Promise<Array<{ id: number; key: string; value: string; updatedAt: Date | null }>>,
+        .where(and(
+          like(appSettingsTable.key, '%_enabled'),
+          eq(appSettingsTable.value, 'true')
+        )) as Promise<Array<{ count: number }>>,
     ]);
 
-    // Count how many jobs are actually enabled (value = true)
-    const activeJobsCount = enabledJobs.filter((setting: { value: string }) => {
-      try {
-        return JSON.parse(setting.value) === true;
-      } catch {
-        return false;
-      }
-    }).length;
+    const activeJobsCount = enabledJobs[0]?.count || 0;
 
     // Calculate total executions (tweets posted + replies posted + YouTube replies)
     const totalExecutions =

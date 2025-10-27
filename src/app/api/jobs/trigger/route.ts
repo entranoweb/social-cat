@@ -13,6 +13,8 @@ import {
 import { checkStrictRateLimit } from '@/lib/ratelimit';
 import { logger, logApiRequest, logApiError } from '@/lib/logger';
 import { triggerJobSchema } from '@/lib/validations';
+import { db } from '@/lib/db';
+import { jobLogsTable } from '@/lib/schema';
 
 /**
  * API Route to manually trigger scheduled jobs
@@ -95,7 +97,39 @@ export async function POST(request: NextRequest) {
 
     logger.info({ job: validatedJobName, params: bodyParams }, `Manually triggering job: ${validatedJobName}`);
 
-    await jobFunction(bodyParams);
+    const startTime = Date.now();
+    let jobStatus: 'success' | 'error' = 'success';
+    let jobMessage = 'Job executed successfully';
+    let jobError: string | undefined;
+
+    try {
+      await jobFunction(bodyParams);
+    } catch (jobError_) {
+      jobStatus = 'error';
+      jobMessage = 'Job execution failed';
+      jobError = jobError_ instanceof Error ? jobError_.message : 'Unknown error';
+      throw jobError_; // Re-throw to be caught by outer catch
+    } finally {
+      const duration = Date.now() - startTime;
+
+      // Write to job_logs table for activity page
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (db as any).insert(jobLogsTable).values({
+          jobName: validatedJobName,
+          status: jobStatus,
+          message: jobMessage,
+          details: JSON.stringify({
+            params: bodyParams,
+            error: jobError,
+            triggeredManually: true,
+          }),
+          duration,
+        });
+      } catch (dbError) {
+        logger.error({ dbError }, 'Failed to write job log to database');
+      }
+    }
 
     logApiRequest('POST', '/api/jobs/trigger', 200);
 

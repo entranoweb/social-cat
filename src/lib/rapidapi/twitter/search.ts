@@ -11,7 +11,34 @@ import { logger } from '../../logger';
  * - Automatic retries with exponential backoff (4 retries)
  * - Handles 429 rate limit errors intelligently
  * - Structured logging
+ * - Query result caching (30 minutes TTL)
  */
+
+// Query cache with 30-minute TTL
+interface CacheEntry {
+  results: SearchResponse;
+  timestamp: number;
+}
+
+const queryCache = new Map<string, CacheEntry>();
+const CACHE_TTL = 30 * 60 * 1000; // 30 minutes
+
+// Cleanup expired cache entries every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  let cleanedCount = 0;
+
+  for (const [key, entry] of queryCache.entries()) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      queryCache.delete(key);
+      cleanedCount++;
+    }
+  }
+
+  if (cleanedCount > 0) {
+    logger.debug({ cleanedCount }, 'Cleaned up expired Twitter search cache entries');
+  }
+}, 10 * 60 * 1000);
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const API_HOST = 'twitter-aio.p.rapidapi.com';
@@ -52,6 +79,16 @@ interface SearchResponse {
 export async function searchTwitter(params: SearchParams): Promise<SearchResponse> {
   if (!RAPIDAPI_KEY) {
     throw new Error('RAPIDAPI_KEY not set in environment variables');
+  }
+
+  // Generate cache key from params
+  const cacheKey = JSON.stringify(params);
+  const cached = queryCache.get(cacheKey);
+
+  // Return cached results if not expired
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    logger.info({ query: params.query, cacheHit: true }, 'Using cached Twitter search results');
+    return cached.results;
   }
 
   // Build filters object for date range and engagement thresholds
@@ -149,20 +186,68 @@ export async function searchTwitter(params: SearchParams): Promise<SearchRespons
       'Twitter search completed'
     );
 
-    return {
+    const searchResponse = {
       results,
       next_cursor: response.data.next_cursor,
     };
+
+    // Cache the results
+    queryCache.set(cacheKey, {
+      results: searchResponse,
+      timestamp: Date.now(),
+    });
+
+    return searchResponse;
   } catch (error) {
+    const axiosError = error as {
+      response?: {
+        status?: number;
+        data?: { message?: string; error?: string };
+        headers?: Record<string, string>
+      };
+      message?: string;
+    };
+
+    const status = axiosError.response?.status;
+    const responseData = axiosError.response?.data;
+
+    // Create user-friendly error message
+    let userMessage = 'Twitter search failed';
+
+    if (status === 429) {
+      const rateLimitReset = axiosError.response?.headers?.['x-ratelimit-reset'];
+      userMessage = '🚫 RapidAPI quota exhausted or rate limited. ';
+
+      if (rateLimitReset) {
+        const resetDate = new Date(parseInt(rateLimitReset) * 1000);
+        userMessage += `Resets at: ${resetDate.toLocaleString()}`;
+      } else {
+        userMessage += 'Check your RapidAPI dashboard for quota status.';
+      }
+    } else if (status === 401 || status === 403) {
+      userMessage = '🔑 RapidAPI authentication failed. Check your RAPIDAPI_KEY environment variable.';
+    } else if (status && status >= 500) {
+      userMessage = '⚠️ RapidAPI server error. Their service might be down. Try again later.';
+    } else if (responseData?.message || responseData?.error) {
+      userMessage = `❌ ${responseData.message || responseData.error}`;
+    }
+
     logger.error(
       {
-        error,
         query: params.query,
-        status: (error as { response?: { status?: number } }).response?.status,
+        status,
+        responseData,
+        userMessage,
+        headers: axiosError.response?.headers,
       },
       'Twitter Search API Error'
     );
-    throw error;
+
+    // Throw error with clear message
+    const enhancedError = new Error(userMessage);
+    (enhancedError as Error & { originalError: unknown; status?: number }).originalError = error;
+    (enhancedError as Error & { status?: number }).status = status;
+    throw enhancedError;
   }
 }
 

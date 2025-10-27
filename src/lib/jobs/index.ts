@@ -5,6 +5,8 @@ import { replyToTweetsJob } from './twitter-reply';
 import { checkAndReplyToYouTubeComments, trackYouTubeVideo, fetchYouTubeCommentsForAnalysis } from './youtube';
 import { initializeBullMQJobs, isBullMQAvailable } from './bullmq-jobs';
 import { logger } from '../logger';
+import { db } from '../db';
+import { appSettingsTable } from '../schema';
 
 /**
  * Define all your scheduled jobs here
@@ -83,10 +85,45 @@ const jobs: ScheduledJob[] = [
 ];
 
 /**
+ * Load settings from database for a specific job
+ */
+async function loadJobSettings(jobName: string): Promise<{ enabled?: boolean; interval?: string }> {
+  try {
+    const prefix = `${jobName}_`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allSettings = await (db as any)
+      .select()
+      .from(appSettingsTable) as Array<{ id: number; key: string; value: string; updatedAt: Date | null }>;
+
+    const jobSettings = allSettings
+      .filter((setting: { key: string }) => setting.key.startsWith(prefix))
+      .reduce((acc: Record<string, unknown>, setting: { key: string; value: string }) => {
+        const settingKey = setting.key.replace(prefix, '');
+        try {
+          acc[settingKey] = JSON.parse(setting.value);
+        } catch {
+          acc[settingKey] = setting.value;
+        }
+        return acc;
+      }, {} as Record<string, unknown>);
+
+    return {
+      enabled: jobSettings.enabled as boolean | undefined,
+      interval: jobSettings.interval as string | undefined,
+    };
+  } catch (error) {
+    logger.error({ error, jobName }, 'Failed to load job settings from database');
+    return {};
+  }
+}
+
+/**
  * Initialize and start all scheduled jobs
  *
  * Uses BullMQ (with Redis) if REDIS_URL is set, otherwise falls back to node-cron.
  * BullMQ provides job persistence across Railway restarts.
+ *
+ * Jobs will load their enabled state and schedule from the database if configured via UI.
  */
 export async function initializeScheduler() {
   logger.info('Initializing job scheduler');
@@ -108,13 +145,32 @@ export async function initializeScheduler() {
   }
 
   // Fallback to node-cron
-  jobs.forEach((job) => {
-    scheduler.register(job);
-  });
+  // Load settings from database for each job
+  for (const job of jobs) {
+    const dbSettings = await loadJobSettings(job.name);
+
+    // Use database settings if available, otherwise use defaults from jobs array
+    const jobConfig: ScheduledJob = {
+      name: job.name,
+      schedule: dbSettings.interval || job.schedule,
+      task: job.task,
+      enabled: dbSettings.enabled !== undefined ? dbSettings.enabled : job.enabled,
+    };
+
+    scheduler.register(jobConfig);
+  }
 
   scheduler.start();
 
-  logger.info({ jobCount: scheduler.getJobs().length }, 'Node-cron scheduler started');
+  const enabledJobs = jobs.filter(async (job) => {
+    const dbSettings = await loadJobSettings(job.name);
+    return dbSettings.enabled !== undefined ? dbSettings.enabled : job.enabled;
+  });
+
+  logger.info(
+    { totalJobs: scheduler.getJobs().length, enabledCount: enabledJobs.length },
+    'Node-cron scheduler started'
+  );
 }
 
 /**

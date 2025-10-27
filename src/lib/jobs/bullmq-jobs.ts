@@ -3,6 +3,8 @@ import { logger } from '../logger';
 import { generateAndPostTweet, analyzeTrends, generateScheduledContent } from './twitter-ai';
 import { replyToTweetsJob } from './twitter-reply';
 import { checkAndReplyToYouTubeComments, fetchYouTubeCommentsForAnalysis } from './youtube';
+import { db } from '../db';
+import { appSettingsTable } from '../schema';
 
 /**
  * BullMQ Job Setup (Optional - only runs if Redis is configured)
@@ -19,7 +21,42 @@ import { checkAndReplyToYouTubeComments, fetchYouTubeCommentsForAnalysis } from 
 export const JOBS_QUEUE = 'scheduled-jobs';
 
 /**
+ * Load settings from database for a specific job
+ */
+async function loadJobSettings(jobName: string): Promise<{ enabled?: boolean; interval?: string }> {
+  try {
+    const prefix = `${jobName}_`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allSettings = await (db as any)
+      .select()
+      .from(appSettingsTable) as Array<{ id: number; key: string; value: string; updatedAt: Date | null }>;
+
+    const jobSettings = allSettings
+      .filter((setting: { key: string }) => setting.key.startsWith(prefix))
+      .reduce((acc: Record<string, unknown>, setting: { key: string; value: string }) => {
+        const settingKey = setting.key.replace(prefix, '');
+        try {
+          acc[settingKey] = JSON.parse(setting.value);
+        } catch {
+          acc[settingKey] = setting.value;
+        }
+        return acc;
+      }, {} as Record<string, unknown>);
+
+    return {
+      enabled: jobSettings.enabled as boolean | undefined,
+      interval: jobSettings.interval as string | undefined,
+    };
+  } catch (error) {
+    logger.error({ error, jobName }, 'Failed to load job settings from database');
+    return {};
+  }
+}
+
+/**
  * Initialize BullMQ workers for all scheduled jobs
+ *
+ * Jobs will load their enabled state and schedule from the database if configured via UI.
  */
 export async function initializeBullMQJobs() {
   if (!process.env.REDIS_URL) {
@@ -69,31 +106,41 @@ export async function initializeBullMQJobs() {
       }
     });
 
-    // Schedule repeating jobs (these replace the cron schedules)
-    // Only add jobs that are commonly enabled
+    // Load job configurations from database and schedule only enabled jobs
+    const jobConfigs = [
+      { name: 'generate-scheduled-content', defaultSchedule: '0 */4 * * *', priority: 2 },
+      { name: 'ai-tweet-generation', defaultSchedule: '0 10 * * *', priority: 1 },
+      { name: 'reply-to-tweets', defaultSchedule: '0 */2 * * *', priority: 1 },
+      { name: 'analyze-trends', defaultSchedule: '0 8 * * *', priority: 3 },
+      { name: 'check-youtube-comments', defaultSchedule: '*/30 * * * *', priority: 3 },
+      { name: 'fetch-youtube-comments-analysis', defaultSchedule: '0 */6 * * *', priority: 4 },
+    ];
 
-    // Example: Generate content every 4 hours
-    await addJob(JOBS_QUEUE, 'generate-scheduled-content', {}, {
-      repeat: { pattern: '0 */4 * * *' }, // Every 4 hours
-      priority: 2,
-    });
+    let enabledCount = 0;
 
-    // Example: Reply to tweets every 2 hours
-    await addJob(JOBS_QUEUE, 'reply-to-tweets', {}, {
-      repeat: { pattern: '0 */2 * * *' }, // Every 2 hours
-      priority: 1,
-    });
+    for (const config of jobConfigs) {
+      const dbSettings = await loadJobSettings(config.name);
 
-    // Example: Check YouTube comments every 30 minutes
-    await addJob(JOBS_QUEUE, 'check-youtube-comments', {}, {
-      repeat: { pattern: '*/30 * * * *' }, // Every 30 minutes
-      priority: 3,
-    });
+      // Only schedule if enabled in database
+      if (dbSettings.enabled === true) {
+        const schedule = dbSettings.interval || config.defaultSchedule;
+
+        await addJob(JOBS_QUEUE, config.name, {}, {
+          repeat: { pattern: schedule },
+          priority: config.priority,
+        });
+
+        enabledCount++;
+        logger.info({ jobName: config.name, schedule }, 'Scheduled BullMQ job');
+      } else {
+        logger.info({ jobName: config.name }, 'Job disabled - skipping');
+      }
+    }
 
     // Start all workers
     await startAllWorkers();
 
-    logger.info('BullMQ jobs initialized successfully');
+    logger.info({ enabledCount, totalJobs: jobConfigs.length }, 'BullMQ jobs initialized successfully');
     return true;
   } catch (error) {
     logger.error({ error }, 'Failed to initialize BullMQ jobs - falling back to node-cron');

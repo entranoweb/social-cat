@@ -1,4 +1,6 @@
 import cron, { ScheduledTask } from 'node-cron';
+import { db } from './db';
+import { jobLogsTable } from './schema';
 
 export interface ScheduledJob {
   name: string;
@@ -50,12 +52,46 @@ class Scheduler {
     const scheduledTask = cron.schedule(
       job.schedule,
       async () => {
+        const startTime = Date.now();
         console.log(`🔄 Running scheduled job: ${job.name}`);
+
         try {
           await job.task();
-          console.log(`✅ Completed job: ${job.name}`);
+          const duration = Date.now() - startTime;
+          console.log(`✅ Completed job: ${job.name} (${duration}ms)`);
+
+          // Log success to database
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (db as any).insert(jobLogsTable).values({
+              jobName: job.name,
+              status: 'success',
+              message: `Job completed successfully`,
+              duration,
+            });
+          } catch (logError) {
+            console.error('Failed to log job success to database:', logError);
+          }
         } catch (error) {
+          const duration = Date.now() - startTime;
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          const errorStack = error instanceof Error ? error.stack : undefined;
+
           console.error(`❌ Error in job "${job.name}":`, error);
+
+          // Log error to database
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (db as any).insert(jobLogsTable).values({
+              jobName: job.name,
+              status: 'error',
+              message: errorMessage,
+              details: errorStack ? JSON.stringify({ stack: errorStack }) : undefined,
+              duration,
+            });
+          } catch (logError) {
+            console.error('Failed to log job error to database:', logError);
+          }
         }
       }
     );
@@ -115,6 +151,70 @@ class Scheduler {
     task.stop();
     this.jobs.delete(jobName);
     console.log(`🗑️  Unregistered job: ${jobName}`);
+  }
+
+  /**
+   * Start a specific job (if it exists and is stopped)
+   */
+  startJob(jobName: string) {
+    const task = this.jobs.get(jobName);
+    if (!task) {
+      console.warn(`⚠️  Job "${jobName}" not found.`);
+      return false;
+    }
+
+    task.start();
+    console.log(`▶️  Started job: ${jobName} (will run on schedule)`);
+    return true;
+  }
+
+  /**
+   * Stop a specific job (if it exists and is running)
+   */
+  stopJob(jobName: string) {
+    const task = this.jobs.get(jobName);
+    if (!task) {
+      console.warn(`⚠️  Job "${jobName}" not found.`);
+      return false;
+    }
+
+    task.stop();
+    console.log(`⏹️  Stopped job: ${jobName}`);
+    return true;
+  }
+
+  /**
+   * Dynamically register or update a job with a new schedule
+   * Useful for runtime job management
+   */
+  registerOrUpdate(job: ScheduledJob) {
+    // If job already exists, unregister it first
+    if (this.jobs.has(job.name)) {
+      this.unregister(job.name);
+    }
+
+    // Register the new/updated job
+    this.register(job);
+
+    // Start the job if enabled (always start in dynamic registration, even if scheduler not globally initialized)
+    // This allows API routes to dynamically start jobs without needing the global scheduler state
+    if (job.enabled !== false) {
+      console.log(`🚀 Starting job immediately: ${job.name}`);
+      this.startJob(job.name);
+
+      // Mark scheduler as initialized so future dynamic registrations work
+      if (!this.isInitialized) {
+        this.isInitialized = true;
+        console.log(`✅ Scheduler initialized via dynamic job registration`);
+      }
+    }
+  }
+
+  /**
+   * Check if a specific job is registered
+   */
+  hasJob(jobName: string): boolean {
+    return this.jobs.has(jobName);
   }
 
   /**

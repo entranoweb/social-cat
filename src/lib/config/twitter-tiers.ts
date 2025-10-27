@@ -40,8 +40,9 @@ export interface TierLimits {
 /**
  * Twitter API Tier Definitions
  *
- * Based on official Twitter/X API documentation (as of 2025)
- * Source: https://developer.x.com/en/docs/x-api
+ * Based on official X API documentation (updated January 2025)
+ * Source: https://docs.x.com/x-api/fundamentals/rate-limits
+ * Pricing: https://developer.x.com/en/portal/products
  */
 export const TWITTER_TIERS: Record<TwitterTier, TierLimits> = {
   free: {
@@ -49,10 +50,11 @@ export const TWITTER_TIERS: Record<TwitterTier, TierLimits> = {
     name: 'Free',
     cost: 0,
     postLimits: {
-      perMonth: 1500, // App-level limit
+      per24Hours: 17, // Per-user AND per-app limit (17 requests/24hrs)
+      perMonth: 510, // ~17/day × 30 days
     },
     readLimits: {
-      perMonth: 0, // Write-only tier, no reads allowed
+      perMonth: 50, // Limited read access (50 posts/month)
     },
     maxResultsPerRequest: 10,
     elevatedAccess: false,
@@ -60,9 +62,10 @@ export const TWITTER_TIERS: Record<TwitterTier, TierLimits> = {
   basic: {
     tier: 'basic',
     name: 'Basic',
-    cost: 100,
+    cost: 200, // Increased from $100 in 2024
     postLimits: {
-      perMonth: 3000, // Per-user limit (50,000 app-level)
+      per24Hours: 100, // Per-user limit (1,667/day app-level)
+      perMonth: 3000, // Per-user monthly estimate
     },
     readLimits: {
       perMonth: 10000, // App-level limit
@@ -75,10 +78,12 @@ export const TWITTER_TIERS: Record<TwitterTier, TierLimits> = {
     name: 'Pro',
     cost: 5000,
     postLimits: {
-      perMonth: 300000,
+      per15Minutes: 100, // Per-user limit (100 requests/15min)
+      per24Hours: 10000, // App-level limit (10,000/day)
+      perMonth: 300000, // App-level monthly estimate
     },
     readLimits: {
-      perMonth: 1000000,
+      perMonth: 1000000, // App-level limit
     },
     maxResultsPerRequest: 100,
     elevatedAccess: true,
@@ -86,7 +91,7 @@ export const TWITTER_TIERS: Record<TwitterTier, TierLimits> = {
   enterprise: {
     tier: 'enterprise',
     name: 'Enterprise',
-    cost: 42000, // Starting price (ranges from $42k-$210k/month)
+    cost: 42000, // Starting price (custom pricing available)
     postLimits: {
       perMonth: 999999999, // Effectively unlimited (custom)
     },
