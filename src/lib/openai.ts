@@ -78,14 +78,15 @@ If asked to create a thread, write the full content as continuous text - it will
 
   const model = await getSelectedModel();
 
-  // GPT-5 models don't support temperature and use max_completion_tokens instead of max_tokens
+  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
+  // Only GPT-4o models support these parameters
   const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
 
   const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
     model,
     messages,
     ...(isGPT5
-      ? { max_completion_tokens: 500 }
+      ? {} // No optional parameters for GPT-5
       : { max_tokens: 500, temperature: 0.8 }
     ),
   };
@@ -177,14 +178,15 @@ Third tweet text here (under 280 chars)`;
 
   const model = await getSelectedModel();
 
-  // GPT-5 models don't support temperature and use max_completion_tokens instead of max_tokens
+  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
+  // Only GPT-4o models support these parameters
   const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
 
   const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
     model,
     messages,
     ...(isGPT5
-      ? { max_completion_tokens: 1000 }
+      ? {} // No optional parameters for GPT-5
       : { max_tokens: 1000, temperature: 0.8 }
     ),
   };
@@ -332,14 +334,15 @@ Goal: Have a real conversation, not broadcast content.`;
 
   const model = await getSelectedModel();
 
-  // GPT-5 models don't support temperature and use max_completion_tokens instead of max_tokens
+  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
+  // Only GPT-4o models support these parameters
   const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
 
   const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
     model,
     messages,
     ...(isGPT5
-      ? { max_completion_tokens: 100 }
+      ? {} // No optional parameters for GPT-5
       : { max_tokens: 100, temperature: 0.7 }
     ),
   };
