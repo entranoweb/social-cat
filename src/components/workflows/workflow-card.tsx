@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Download, Trash2, Workflow as WorkflowIcon, Play, Key, MessageSquare, Webhook, Clock, Send, Sliders, BarChart3, Table2, Image as ImageIcon, FileText, Braces, List } from 'lucide-react';
+import { Download, Trash2, Workflow as WorkflowIcon, Play, Key, MessageSquare, Webhook, Clock, Send, Sliders, BarChart3, Table2, Image, FileText, List, Braces } from 'lucide-react';
 import { WorkflowListItem } from '@/types/workflows';
 import { WorkflowExecutionDialog } from './workflow-execution-dialog';
 import { CredentialsConfigDialog } from './credentials-config-dialog';
@@ -18,11 +18,10 @@ interface WorkflowCardProps {
   workflow: WorkflowListItem;
   onDeleted: () => void;
   onExport: (id: string) => void;
-  onViewHistory: (id: string) => void;
   onUpdated?: () => void;
 }
 
-export function WorkflowCard({ workflow, onDeleted, onExport, onViewHistory, onUpdated }: WorkflowCardProps) {
+export function WorkflowCard({ workflow, onDeleted, onExport, onUpdated }: WorkflowCardProps) {
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [optimisticStatus, setOptimisticStatus] = useState<string | null>(null);
@@ -56,43 +55,25 @@ export function WorkflowCard({ workflow, onDeleted, onExport, onViewHistory, onU
         throw new Error('Failed to delete workflow');
       }
 
-      toast.success('Workflow deleted', {
-        description: `"${workflow.name}" has been removed.`,
-      });
+      toast.success('Workflow deleted');
       onDeleted();
     } catch (error) {
-      console.error('Failed to delete workflow:', error);
-      toast.error('Failed to delete workflow', {
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
-      });
+      console.error('Error deleting workflow:', error);
+      toast.error('Failed to delete workflow');
     } finally {
       setDeleting(false);
     }
   };
 
-  const handleRunClick = () => {
-    setExecutionDialogOpen(true);
-  };
-
-  const handleExecuted = () => {
-    // Just refresh the workflows list, don't execute again
-    // The dialog already handled the execution
-    onUpdated?.();
-  };
-
-  const handleToggleStatus = async (checked: boolean) => {
-    const newStatus = checked ? 'active' : 'draft';
-
-    // Optimistic update - update UI immediately
-    setOptimisticStatus(newStatus);
+  const handleToggleStatus = async () => {
+    const newStatus = workflow.status === 'active' ? 'draft' : 'active';
     setToggling(true);
+    setOptimisticStatus(newStatus);
 
     try {
-      const response = await fetch(`/api/workflows/${workflow.id}`, {
+      const response = await fetch(`/api/workflows/${workflow.id}/status`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       });
 
@@ -100,103 +81,148 @@ export function WorkflowCard({ workflow, onDeleted, onExport, onViewHistory, onU
         throw new Error('Failed to update workflow status');
       }
 
-      toast.success(`Workflow ${checked ? 'activated' : 'deactivated'}`, {
-        description: `"${workflow.name}" is now ${newStatus}.`,
-      });
+      toast.success(`Workflow ${newStatus === 'active' ? 'activated' : 'deactivated'}`);
       onUpdated?.();
     } catch (error) {
-      // Revert optimistic update on error
+      console.error('Error updating workflow status:', error);
+      toast.error('Failed to update workflow status');
       setOptimisticStatus(null);
-      console.error('Failed to toggle workflow status:', error);
-      toast.error('Failed to update workflow', {
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
-      });
     } finally {
       setToggling(false);
     }
   };
 
-  const formatDate = (date: Date | null) => {
-    if (!date) return 'Never';
-    return new Date(date).toLocaleDateString();
+  const handleRunClick = () => {
+    if (workflow.trigger.type === 'chat') {
+      window.location.href = `/workflows/${workflow.id}/chat`;
+    } else {
+      setExecutionDialogOpen(true);
+    }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
       case 'draft':
-        return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
       case 'paused':
-        return 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400';
+        return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300';
       case 'error':
-        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
       default:
-        return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
     }
   };
 
-  const getRunStatusColor = (status: string | null) => {
+  const getRunStatusColor = (status: string) => {
     switch (status) {
       case 'success':
-        return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
+        return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300';
       case 'error':
-        return 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400';
+        return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300';
       case 'running':
-        return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
+        return 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300';
       default:
-        return 'bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400';
+        return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
     }
   };
 
-  const getRunButtonConfig = () => {
-    switch (workflow.trigger.type) {
-      case 'chat':
-        return { icon: MessageSquare, label: 'Chat' };
-      case 'webhook':
-        return { icon: Webhook, label: 'Webhook' };
+  const getTriggerIcon = (triggerType: string) => {
+    switch (triggerType) {
       case 'cron':
-        return { icon: Clock, label: 'Schedule' };
+        return Clock;
+      case 'webhook':
+        return Webhook;
       case 'telegram':
-        return { icon: Send, label: 'Telegram' };
       case 'discord':
-        return { icon: Send, label: 'Discord' };
-      case 'manual':
+        return Send;
+      case 'chat':
+        return MessageSquare;
       default:
-        return { icon: Play, label: 'Run' };
+        return Play;
     }
   };
 
-  const runButtonConfig = getRunButtonConfig();
-  const RunIcon = runButtonConfig.icon;
+  const getTriggerLabel = (triggerType: string) => {
+    switch (triggerType) {
+      case 'cron':
+        return 'Scheduled';
+      case 'webhook':
+        return 'Webhook';
+      case 'telegram':
+        return 'Telegram';
+      case 'discord':
+        return 'Discord';
+      case 'chat':
+        return 'Chat';
+      default:
+        return 'Manual';
+    }
+  };
 
-  // Detect output type for badge
-  const outputDisplay = workflow.lastRunOutput
-    ? detectOutputDisplay('', workflow.lastRunOutput)
-    : null;
-  const outputTypeLabel = outputDisplay ? getOutputTypeLabel(outputDisplay.type) : null;
-  const outputIconName = outputDisplay ? getOutputTypeIcon(outputDisplay.type) : 'BarChart3';
+  const formatDate = (date: Date | string | null) => {
+    if (!date) return 'Never';
+    const d = typeof date === 'string' ? new Date(date) : date;
+    return d.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const TriggerIcon = getTriggerIcon(workflow.trigger.type);
+
+  // Get the last step's module path for output display detection
+  const config = workflow.config as { steps?: Array<{ module?: string }> };
+  const lastStep = config.steps?.[config.steps.length - 1];
+  const lastStepModule = lastStep?.module || '';
+
+  const outputDisplay = detectOutputDisplay(lastStepModule, workflow.lastRunOutput);
+  const outputTypeLabel = getOutputTypeLabel(outputDisplay.type);
+  const outputIconName = getOutputTypeIcon(outputDisplay.type);
 
   // Map icon name to component
-  const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
-    Table2,
-    Image: ImageIcon,
-    FileText,
-    BarChart3,
-    List,
-    Braces,
+  const iconMap: Record<string, typeof Table2> = {
+    'Table2': Table2,
+    'Image': Image,
+    'FileText': FileText,
+    'BarChart3': BarChart3,
+    'List': List,
+    'Braces': Braces,
   };
-  const OutputIcon = iconMap[outputIconName] || BarChart3;
+  const OutputIcon = iconMap[outputIconName] || Braces;
+
+  const runButtonConfig = (() => {
+    switch (workflow.trigger.type) {
+      case 'chat':
+        return { label: 'Chat', icon: MessageSquare };
+      case 'cron':
+        return { label: 'Run Now', icon: Play };
+      case 'webhook':
+        return { label: 'Test', icon: Play };
+      default:
+        return { label: 'Run', icon: Play };
+    }
+  })();
+
+  const RunIcon = runButtonConfig.icon;
 
   return (
-    <Card className="group relative overflow-hidden rounded-lg border border-border/50 bg-surface/80 backdrop-blur-sm shadow-sm hover:shadow-lg hover:border-primary/30 transition-all duration-300 hover:scale-[1.02]">
-      <CardHeader className="pb-3 pt-4">
-        <div className="flex items-center gap-2 mb-2">
+    <Card className="group hover:shadow-md transition-all duration-200 hover:scale-[1.02] relative overflow-hidden border-l-4 border-l-transparent hover:border-l-primary">
+      <CardHeader className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Badge variant="outline" className="gap-1 bg-muted/50">
+            <TriggerIcon className="h-3 w-3" />
+            {getTriggerLabel(workflow.trigger.type)}
+          </Badge>
           <Switch
             checked={(optimisticStatus || workflow.status) === 'active'}
             onCheckedChange={handleToggleStatus}
             disabled={toggling}
-            className="data-[state=checked]:!bg-green-500 dark:data-[state=checked]:!bg-green-600 data-[state=unchecked]:!bg-gray-300 dark:data-[state=unchecked]:!bg-gray-600"
+            aria-label="Toggle workflow status"
           />
           <span className={`text-xs font-medium ${(optimisticStatus || workflow.status) === 'active' ? 'text-green-600 dark:text-green-400' : 'text-muted-foreground'}`}>
             {(optimisticStatus || workflow.status) === 'active' ? 'Active' : 'Inactive'}
@@ -322,12 +348,12 @@ export function WorkflowCard({ workflow, onDeleted, onExport, onViewHistory, onU
       <WorkflowExecutionDialog
         workflowId={workflow.id}
         workflowName={workflow.name}
+        workflowDescription={workflow.description || undefined}
         workflowConfig={workflow.config}
         triggerType={workflow.trigger.type}
         triggerConfig={workflow.trigger.config}
         open={executionDialogOpen}
         onOpenChange={setExecutionDialogOpen}
-        onExecuted={handleExecuted}
       />
 
       <CredentialsConfigDialog

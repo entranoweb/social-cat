@@ -5,7 +5,6 @@ import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { Button } from '@/components/ui/button';
 import { Upload, Search, Workflow, CheckCircle2, XCircle } from 'lucide-react';
 import { WorkflowsList } from '@/components/workflows/workflows-list';
-import { ExecutionHistoryDialog } from '@/components/workflows/execution-history-dialog';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -30,9 +29,6 @@ export default function WorkflowsPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [showHistoryDialog, setShowHistoryDialog] = useState(false);
-  const [historyWorkflowId, setHistoryWorkflowId] = useState('');
-  const [historyWorkflowName, setHistoryWorkflowName] = useState('');
 
   const fetchWorkflows = async () => {
     try {
@@ -87,15 +83,6 @@ export default function WorkflowsPage() {
   const handleImportClick = () => {
     setShowImportDialog(true);
     setImportError('');
-  };
-
-  const handleViewHistory = (id: string) => {
-    const workflow = workflows.find((w) => w.id === id);
-    if (!workflow) return;
-
-    setHistoryWorkflowId(id);
-    setHistoryWorkflowName(workflow.name);
-    setShowHistoryDialog(true);
   };
 
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -293,7 +280,6 @@ export default function WorkflowsPage() {
           loading={loading}
           onWorkflowDeleted={handleWorkflowDeleted}
           onWorkflowExport={handleWorkflowExport}
-          onWorkflowViewHistory={handleViewHistory}
           onWorkflowUpdated={fetchWorkflows}
         />
 
@@ -337,13 +323,6 @@ export default function WorkflowsPage() {
             </div>
           </DialogContent>
         </Dialog>
-
-        <ExecutionHistoryDialog
-          open={showHistoryDialog}
-          onOpenChange={setShowHistoryDialog}
-          workflowId={historyWorkflowId}
-          workflowName={historyWorkflowName}
-        />
       </div>
     </DashboardLayout>
   );

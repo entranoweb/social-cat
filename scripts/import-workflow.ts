@@ -19,6 +19,10 @@ interface WorkflowExport {
   version: string;
   name: string;
   description: string;
+  trigger?: {
+    type: 'manual' | 'cron' | 'webhook' | 'telegram' | 'discord' | 'chat';
+    config: Record<string, unknown>;
+  };
   config: {
     steps: Array<{
       id: string;

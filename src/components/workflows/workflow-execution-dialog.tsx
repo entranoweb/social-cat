@@ -19,6 +19,7 @@ import { RunOutputModal } from './run-output-modal';
 interface WorkflowExecutionDialogProps {
   workflowId: string;
   workflowName: string;
+  workflowDescription?: string;
   workflowConfig?: Record<string, unknown>;
   triggerType: 'manual' | 'cron' | 'webhook' | 'telegram' | 'discord' | 'chat';
   triggerConfig?: Record<string, unknown>;
@@ -42,6 +43,7 @@ interface ExecutionResult {
 export function WorkflowExecutionDialog({
   workflowId,
   workflowName,
+  workflowDescription,
   workflowConfig,
   triggerType,
   open,
@@ -52,6 +54,7 @@ export function WorkflowExecutionDialog({
   const [executionResult, setExecutionResult] = useState<ExecutionResult | null>(null);
   const [showOutputModal, setShowOutputModal] = useState(false);
   const [triggerData, setTriggerData] = useState<Record<string, unknown>>({});
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Reset state when dialog opens/closes
   useEffect(() => {
@@ -143,8 +146,10 @@ export function WorkflowExecutionDialog({
           <ChatTriggerConfig
             workflowId={workflowId}
             workflowName={workflowName}
+            workflowDescription={workflowDescription}
             onConfigChange={setTriggerData}
             onExecute={handleExecuteWrapper}
+            onFullscreenChange={setIsFullscreen}
           />
         );
       case 'webhook':
@@ -167,17 +172,32 @@ export function WorkflowExecutionDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="sm:max-w-md">
-          {triggerType !== 'chat' && (
+        <DialogContent
+          className={
+            triggerType === 'chat' && !isFullscreen
+              ? 'sm:max-w-4xl w-full h-[85vh] flex flex-col p-0'
+              : isFullscreen
+                ? '!max-w-none w-screen h-screen flex flex-col p-0 rounded-none border-0'
+                : 'sm:max-w-md'
+          }
+        >
+          {triggerType === 'chat' && !isFullscreen ? (
+            <DialogHeader>
+              <DialogTitle className="sr-only">{workflowName}</DialogTitle>
+              <DialogDescription className="sr-only">
+                {getTriggerDescription()}
+              </DialogDescription>
+            </DialogHeader>
+          ) : triggerType !== 'chat' ? (
             <DialogHeader>
               <DialogTitle>{workflowName}</DialogTitle>
               <DialogDescription className="text-xs">
                 {getTriggerDescription()}
               </DialogDescription>
             </DialogHeader>
-          )}
+          ) : null}
 
-          <div className={triggerType === 'chat' ? 'pt-6' : 'py-4'}>
+          <div className={triggerType === 'chat' ? 'flex-1 min-h-0 overflow-hidden' : 'py-4'}>
             {/* Render trigger-specific configuration */}
             {renderTriggerConfig()}
           </div>

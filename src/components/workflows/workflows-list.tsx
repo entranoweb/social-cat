@@ -9,7 +9,6 @@ interface WorkflowsListProps {
   loading: boolean;
   onWorkflowDeleted: () => void;
   onWorkflowExport: (id: string) => void;
-  onWorkflowViewHistory: (id: string) => void;
   onWorkflowUpdated?: () => void;
 }
 
@@ -18,7 +17,6 @@ export function WorkflowsList({
   loading,
   onWorkflowDeleted,
   onWorkflowExport,
-  onWorkflowViewHistory,
   onWorkflowUpdated,
 }: WorkflowsListProps) {
   if (loading) {
@@ -86,7 +84,6 @@ export function WorkflowsList({
           workflow={workflow}
           onDeleted={onWorkflowDeleted}
           onExport={onWorkflowExport}
-          onViewHistory={onWorkflowViewHistory}
           onUpdated={onWorkflowUpdated}
         />
       ))}

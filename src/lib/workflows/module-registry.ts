@@ -707,15 +707,10 @@ export function getModuleRegistry(): ModuleCategory[] {
           name: 'openai',
           functions: [
             {
-              name: 'createCompletion',
-              description: 'Generate text with GPT',
-              signature: 'createCompletion({ apiKey, model, messages, temperature?, maxTokens? })',
-              example: 'await createCompletion({ apiKey: "sk-...", model: "gpt-4", messages: [{ role: "user", content: "Hello!" }] })',
-            },
-            {
-              name: 'generateImage',
-              description: 'Generate image with DALL-E',
-              signature: 'generateImage({ apiKey, prompt, size?, quality? })',
+              name: 'generateText',
+              description: 'Generate text with GPT models',
+              signature: 'generateText({ prompt, systemPrompt?, model?, temperature?, maxTokens?, apiKey? })',
+              example: 'await generateText({ prompt: "Write a tweet about AI", model: "gpt-4o-mini", apiKey: "{{user.openai}}" })',
             },
           ],
         },

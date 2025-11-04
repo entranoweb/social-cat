@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       config: JSON.stringify(workflow.config) as any,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      trigger: JSON.stringify({ type: 'manual', config: {} }) as any,
+      trigger: JSON.stringify((workflow as any).trigger || { type: 'manual', config: {} }) as any,
       status: 'draft',
     });
 

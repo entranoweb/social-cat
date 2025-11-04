@@ -49,6 +49,15 @@ Based on the user's request, create a workflow export format:
   version: "1.0",
   name: "Short descriptive name",
   description: "What this workflow does",
+  trigger: { // OPTIONAL: How the workflow is triggered (defaults to manual)
+    type: "manual" | "chat" | "webhook" | "cron" | "telegram" | "discord",
+    config: {
+      // For cron: { schedule: "0 9 * * *" }
+      // For telegram/discord: { command: "/mycommand" }
+      // For webhook: { secret?: "optional-secret" }
+      // For manual/chat: {}
+    }
+  },
   config: {
     steps: [
       {
@@ -82,6 +91,7 @@ Based on the user's request, create a workflow export format:
 - Each step's inputs are passed as positional arguments to the function
 - `version` field is required (use "1.0")
 - `metadata.requiresCredentials` lists which API keys the user needs to configure
+- `trigger` field is optional (defaults to manual if not specified)
 
 **OUTPUT DISPLAY CONFIGURATION:**
 

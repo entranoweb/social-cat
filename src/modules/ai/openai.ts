@@ -1,374 +1,374 @@
 import OpenAI from 'openai';
-import { createOpenAICircuitBreaker } from '@/lib/resilience';
-import { openaiRateLimiter, withRateLimit } from '@/lib/rate-limiter';
+import { createCircuitBreaker } from '@/lib/resilience';
+import { createRateLimiter, withRateLimit } from '@/lib/rate-limiter';
 import { logger } from '@/lib/logger';
-import { db } from '@/lib/db';
-import { appSettingsTable } from '@/lib/schema';
-import { eq } from 'drizzle-orm';
 
 /**
- * OpenAI API Client with Reliability Infrastructure
+ * OpenAI Module
  *
- * Features:
- * - Circuit breaker to prevent hammering failing API
- * - Rate limiting (500 req/min)
- * - Structured logging
- * - 60s timeout for AI generation
+ * Generate text, chat, analyze content, and build AI workflows with GPT models
+ * - Text generation with multiple models
+ * - Multi-turn conversations
+ * - Function calling (tools)
+ * - Vision capabilities (GPT-4 Vision)
+ * - Built-in resilience
+ *
+ * Perfect for:
+ * - Content generation
+ * - Code generation
+ * - Data analysis
+ * - Intelligent automation
  */
 
-if (!process.env.OPENAI_API_KEY) {
-  logger.warn('⚠️  OPENAI_API_KEY is not set. OpenAI features will not work.');
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+
+if (!OPENAI_API_KEY) {
+  logger.warn('⚠️  OPENAI_API_KEY not set. OpenAI features will not work.');
 }
 
-export const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || '',
-  timeout: 60000, // 60 second timeout
+const openaiClient = OPENAI_API_KEY
+  ? new OpenAI({
+      apiKey: OPENAI_API_KEY,
+      timeout: 60000, // 60 second timeout
+    })
+  : null;
+
+// Rate limiter: Conservative limits for API usage
+const openaiRateLimiter = createRateLimiter({
+  maxConcurrent: 5,
+  minTime: 200, // 200ms between requests
+  reservoir: 500,
+  reservoirRefreshAmount: 500,
+  reservoirRefreshInterval: 60 * 1000,
+  id: 'openai',
 });
 
-/**
- * Get the selected OpenAI model from database settings
- * Falls back to gpt-4o-mini if not set
- */
-async function getSelectedModel(): Promise<string> {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const settings = await (db as any)
-      .select()
-      .from(appSettingsTable)
-      .where(eq(appSettingsTable.key, 'openai_model'))
-      .limit(1);
-
-    return settings[0]?.value || 'gpt-4o-mini';
-  } catch (error) {
-    logger.warn({ error }, 'Failed to fetch model setting from database, using default');
-    return 'gpt-4o-mini';
-  }
+export interface OpenAIMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
 }
 
-async function generateTweetInternal(
-  prompt: string,
-  systemPrompt?: string
-): Promise<string> {
-  logger.info({ promptLength: prompt.length, hasSystemPrompt: !!systemPrompt }, 'Generating tweet with AI');
+export interface OpenAICompletionOptions {
+  messages: OpenAIMessage[];
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+  tools?: OpenAI.Chat.Completions.ChatCompletionTool[];
+  stream?: boolean;
+}
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+export interface OpenAICompletionResponse {
+  content: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  finishReason: string;
+  toolCalls?: Array<{
+    id: string;
+    name: string;
+    arguments: string;
+  }>;
+}
 
-  // Only add system prompt if provided by caller
-  // Append technical requirement to whatever prompt they provide
-  if (systemPrompt) {
-    messages.push({
-      role: 'system',
-      content: `${systemPrompt}\n\nCRITICAL: Keep tweets under 280 characters.`,
-    });
+/**
+ * Internal create completion function (unprotected)
+ */
+async function createCompletionInternal(
+  options: OpenAICompletionOptions
+): Promise<OpenAICompletionResponse> {
+  if (!openaiClient) {
+    throw new Error('OpenAI client not initialized. Set OPENAI_API_KEY.');
   }
 
-  messages.push({
-    role: 'user',
-    content: prompt,
-  });
+  const model = options.model || 'gpt-4o-mini';
 
-  const model = await getSelectedModel();
+  logger.info(
+    {
+      model,
+      messageCount: options.messages.length,
+      hasTools: !!options.tools,
+    },
+    'Creating OpenAI completion'
+  );
 
-  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
-  // Only GPT-4o models support these parameters
+  // GPT-5/o1/o3 models don't support temperature, max_tokens, etc.
   const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
 
   const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
     model,
-    messages,
+    messages: options.messages,
+    tools: options.tools,
     ...(isGPT5
-      ? {} // No optional parameters for GPT-5
-      : { max_tokens: 500, temperature: 0.8 }
+      ? {} // No optional parameters for GPT-5/o1/o3
+      : {
+          max_tokens: options.maxTokens,
+          temperature: options.temperature,
+        }
     ),
   };
 
-  const completion = await openai.chat.completions.create(completionParams);
+  const response = await openaiClient.chat.completions.create(completionParams);
 
-  const result = completion.choices[0]?.message?.content || '';
-  logger.info({ resultLength: result.length }, 'Tweet generated successfully');
-  return result;
+  const message = response.choices[0]?.message;
+
+  logger.info(
+    {
+      promptTokens: response.usage?.prompt_tokens,
+      completionTokens: response.usage?.completion_tokens,
+      finishReason: response.choices[0]?.finish_reason,
+    },
+    'OpenAI completion created'
+  );
+
+  // Extract tool calls if present
+  const toolCalls = message?.tool_calls?.map(tc => {
+    if ('function' in tc) {
+      return {
+        id: tc.id,
+        name: tc.function.name,
+        arguments: tc.function.arguments,
+      };
+    }
+    return null;
+  }).filter((tc): tc is { id: string; name: string; arguments: string } => tc !== null);
+
+  return {
+    content: message?.content || '',
+    usage: response.usage
+      ? {
+          promptTokens: response.usage.prompt_tokens,
+          completionTokens: response.usage.completion_tokens,
+          totalTokens: response.usage.total_tokens,
+        }
+      : undefined,
+    finishReason: response.choices[0]?.finish_reason || 'stop',
+    toolCalls,
+  };
 }
 
 /**
- * Generate tweet (protected with circuit breaker + rate limiting)
- *
- * @param prompt - The user's prompt describing what to tweet about
- * @param systemPrompt - Optional custom system prompt to control tone/style
+ * Create completion (protected)
  */
-const generateTweetWithBreaker = createOpenAICircuitBreaker(generateTweetInternal);
-export const generateTweet = withRateLimit(
-  (prompt: string, systemPrompt?: string) => generateTweetWithBreaker.fire(prompt, systemPrompt),
+const createCompletionWithBreaker = createCircuitBreaker(createCompletionInternal, {
+  timeout: 60000, // 60 seconds for AI generation
+  name: 'openai-completion',
+});
+
+const createCompletionRateLimited = withRateLimit(
+  async (options: OpenAICompletionOptions) =>
+    createCompletionWithBreaker.fire(options),
   openaiRateLimiter
 );
 
+export async function createCompletion(
+  options: OpenAICompletionOptions
+): Promise<OpenAICompletionResponse> {
+  return (await createCompletionRateLimited(
+    options
+  )) as unknown as OpenAICompletionResponse;
+}
+
 /**
- * Generate a thread of tweets (internal, unprotected)
- *
- * @param prompt - The user's prompt describing what the thread should be about
- * @param threadLength - Number of tweets in the thread (2-10)
- * @param systemPrompt - Optional custom system prompt
- * @returns Array of tweet strings, each under 280 characters
+ * Simple text generation
+ * For workflows: Pass apiKey from user credentials via {{user.openai}}
  */
-async function generateThreadInternal(
-  prompt: string,
-  threadLength: number = 3,
-  systemPrompt?: string
-): Promise<string[]> {
-  logger.info(
-    { promptLength: prompt.length, threadLength, hasSystemPrompt: !!systemPrompt },
-    'Generating thread with AI'
-  );
+export async function generateText(params: {
+  prompt: string;
+  systemPrompt?: string;
+  model?: string;
+  maxTokens?: number;
+  temperature?: number;
+  apiKey?: string;
+}): Promise<string> {
+  const { prompt, systemPrompt, model, maxTokens, temperature, apiKey } = params;
 
-  // CRITICAL: Always append formatting instructions - these are technical requirements
-  const formattingInstructions = `
+  // Use provided API key or fall back to system key
+  const client = apiKey
+    ? new OpenAI({ apiKey, timeout: 60000 })
+    : openaiClient;
 
-IMPORTANT FORMATTING RULES:
-- You MUST generate EXACTLY ${threadLength} separate tweets
-- Each tweet MUST be under 280 characters
-- Return ONLY the tweets separated by "---" (three dashes on a new line)
-- Do NOT return a single long tweet - split it into ${threadLength} distinct tweets
-
-Example format:
-First tweet text here (under 280 chars)
-
----
-
-Second tweet text here (under 280 chars)
-
----
-
-Third tweet text here (under 280 chars)`;
-
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-
-  // Only add system prompt if provided by caller
-  // Always append formatting instructions
-  if (systemPrompt) {
-    messages.push({
-      role: 'system',
-      content: `${systemPrompt}${formattingInstructions}`,
-    });
+  if (!client) {
+    throw new Error('OpenAI API key required. Set OPENAI_API_KEY or provide apiKey parameter.');
   }
 
-  messages.push({
-    role: 'user',
-    content: prompt,
+  const messages: OpenAIMessage[] = [];
+
+  if (systemPrompt) {
+    messages.push({ role: 'system', content: systemPrompt });
+  }
+
+  messages.push({ role: 'user', content: prompt });
+
+  logger.info({ model: model || 'gpt-4o-mini', promptLength: prompt.length }, 'Generating text with OpenAI');
+
+  const isGPT5 = (model || 'gpt-4o-mini').startsWith('gpt-5') ||
+                 (model || '').startsWith('o1') ||
+                 (model || '').startsWith('o3');
+
+  const response = await client.chat.completions.create({
+    model: model || 'gpt-4o-mini',
+    messages,
+    ...(isGPT5 ? {} : { max_tokens: maxTokens, temperature }),
   });
 
-  const model = await getSelectedModel();
+  const content = response.choices[0]?.message?.content || '';
+  logger.info({ responseLength: content.length }, 'Text generated');
 
-  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
-  // Only GPT-4o models support these parameters
+  return content;
+}
+
+/**
+ * Chat with conversation history (convenience)
+ */
+export async function chat(
+  messages: OpenAIMessage[],
+  model?: string,
+  options?: {
+    maxTokens?: number;
+    temperature?: number;
+  }
+): Promise<string> {
+  const response = await createCompletion({
+    messages,
+    model: model || 'gpt-4o-mini',
+    maxTokens: options?.maxTokens,
+    temperature: options?.temperature,
+  });
+
+  return response.content;
+}
+
+/**
+ * Fast generation with GPT-4o-mini (convenience)
+ */
+export async function generateFast(
+  prompt: string,
+  systemPrompt?: string
+): Promise<string> {
+  return generateText({ prompt, systemPrompt, model: 'gpt-4o-mini', temperature: 0.8 });
+}
+
+/**
+ * High quality generation with GPT-4o (convenience)
+ */
+export async function generateQuality(
+  prompt: string,
+  systemPrompt?: string
+): Promise<string> {
+  return generateText({ prompt, systemPrompt, model: 'gpt-4o', temperature: 0.7 });
+}
+
+/**
+ * Analyze image with vision
+ */
+export async function analyzeImage(
+  imageUrl: string,
+  prompt: string,
+  model?: string
+): Promise<string> {
+  if (!openaiClient) {
+    throw new Error('OpenAI client not initialized. Set OPENAI_API_KEY.');
+  }
+
+  logger.info({ prompt, hasImage: true }, 'Analyzing image with GPT-4 Vision');
+
+  const response = await openaiClient.chat.completions.create({
+    model: model || 'gpt-4o',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: { url: imageUrl },
+          },
+          {
+            type: 'text',
+            text: prompt,
+          },
+        ],
+      },
+    ],
+    max_tokens: 4096,
+  });
+
+  return response.choices[0]?.message?.content || '';
+}
+
+/**
+ * Streaming completion (for real-time applications)
+ */
+export async function* streamCompletion(
+  options: OpenAICompletionOptions
+): AsyncGenerator<string> {
+  if (!openaiClient) {
+    throw new Error('OpenAI client not initialized. Set OPENAI_API_KEY.');
+  }
+
+  const model = options.model || 'gpt-4o-mini';
+
+  logger.info(
+    {
+      model,
+      messageCount: options.messages.length,
+    },
+    'Starting OpenAI stream'
+  );
+
+  // GPT-5/o1/o3 models don't support temperature, max_tokens, etc.
   const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
 
-  const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
+  const stream = await openaiClient.chat.completions.create({
     model,
-    messages,
+    messages: options.messages,
+    stream: true,
     ...(isGPT5
-      ? {} // No optional parameters for GPT-5
-      : { max_tokens: 1000, temperature: 0.8 }
+      ? {} // No optional parameters for GPT-5/o1/o3
+      : {
+          max_tokens: options.maxTokens,
+          temperature: options.temperature,
+        }
     ),
-  };
+  });
 
-  const completion = await openai.chat.completions.create(completionParams);
-
-  const result = completion.choices[0]?.message?.content || '';
-
-  // Log raw AI response for debugging
-  logger.info({ rawResponse: result.substring(0, 500) }, 'Raw AI thread response (first 500 chars)');
-
-  // Split the result by "---" separator (handle various formats)
-  // Try multiple parsing strategies:
-  let tweets: string[] = [];
-
-  // Strategy 1: Split by "---" with flexible whitespace
-  if (result.includes('---')) {
-    tweets = result
-      .split(/\s*---\s*/)
-      .map(tweet => tweet.trim())
-      .filter(tweet => tweet.length > 0 && tweet.length <= 280);
-  }
-
-  // Strategy 2: If no separator found, try splitting by double newlines
-  if (tweets.length === 0 && result.includes('\n\n')) {
-    tweets = result
-      .split(/\n\n+/)
-      .map(tweet => tweet.trim())
-      .filter(tweet => tweet.length > 0 && tweet.length <= 280);
-  }
-
-  // Strategy 3: If still no tweets, try splitting by numbered list (1., 2., 3.)
-  if (tweets.length === 0 && /^\d+\.\s/.test(result)) {
-    tweets = result
-      .split(/\n\d+\.\s/)
-      .map(tweet => tweet.trim())
-      .filter(tweet => tweet.length > 0 && tweet.length <= 280);
-    // Remove potential leading number from first tweet
-    if (tweets.length > 0 && /^\d+\.\s/.test(tweets[0])) {
-      tweets[0] = tweets[0].replace(/^\d+\.\s/, '').trim();
+  for await (const chunk of stream) {
+    const content = chunk.choices[0]?.delta?.content;
+    if (content) {
+      yield content;
     }
   }
 
-  // Strategy 4: Last resort - treat entire response as single tweet if it's valid
-  if (tweets.length === 0 && result.trim().length > 0 && result.trim().length <= 280) {
-    tweets = [result.trim()];
-  }
-
-  // Log parsed tweets for debugging
-  logger.info({ parsedCount: tweets.length, tweets: tweets.slice(0, 3) }, 'Parsed tweets from AI response');
-
-  // Validate we got the right number of tweets
-  if (tweets.length < threadLength) {
-    logger.warn(
-      { expected: threadLength, received: tweets.length },
-      'Generated fewer tweets than requested, padding with available tweets'
-    );
-  }
-
-  // Take exactly threadLength tweets (or all if fewer were generated)
-  const finalTweets = tweets.slice(0, threadLength);
-
-  logger.info(
-    { tweetCount: finalTweets.length, lengths: finalTweets.map(t => t.length) },
-    'Thread generated successfully'
-  );
-
-  return finalTweets;
+  logger.info('OpenAI stream completed');
 }
 
 /**
- * Generate a thread of tweets (protected with circuit breaker + rate limiting)
- *
- * @param prompt - The user's prompt describing what the thread should be about
- * @param threadLength - Number of tweets in the thread (2-10)
- * @param systemPrompt - Optional custom system prompt
- * @returns Array of tweet strings
+ * Generate structured JSON output
  */
-const generateThreadWithBreaker = createOpenAICircuitBreaker(generateThreadInternal);
-export const generateThread = withRateLimit(
-  (prompt: string, threadLength?: number, systemPrompt?: string) =>
-    generateThreadWithBreaker.fire(prompt, threadLength, systemPrompt),
-  openaiRateLimiter
-);
-
-async function generateTweetReplyInternal(
-  originalTweet: string,
-  systemPrompt?: string
-): Promise<string> {
-  logger.info(
-    { originalTweetLength: originalTweet.length, hasSystemPrompt: !!systemPrompt },
-    'Generating tweet reply with AI'
-  );
-
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
-
-  // Only add system prompt if provided by caller
-  // Append technical requirement to whatever prompt they provide
-  if (systemPrompt) {
-    messages.push({
-      role: 'system',
-      content: `${systemPrompt}\n\nCRITICAL: Keep your reply under 280 characters.`,
-    });
-  }
-
-  messages.push({
-    role: 'user',
-    content: `Generate a reply to this tweet:\n\n"${originalTweet}"`,
-  });
-
-  const model = await getSelectedModel();
-
-  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
-  // Only GPT-4o models support these parameters
-  const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
-
-  const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-    model,
-    messages,
-    ...(isGPT5
-      ? {} // No optional parameters for GPT-5
-      : { max_tokens: 100, temperature: 0.7 }
-    ),
-  };
-
-  const completion = await openai.chat.completions.create(completionParams);
-
-  const result = completion.choices[0]?.message?.content || '';
-  logger.info({ replyLength: result.length }, 'Tweet reply generated successfully');
-  return result;
-}
-
-/**
- * Generate tweet reply (protected with circuit breaker + rate limiting)
- */
-const generateTweetReplyWithBreaker = createOpenAICircuitBreaker(generateTweetReplyInternal);
-export const generateTweetReply = withRateLimit(
-  (originalTweet: string, systemPrompt?: string) =>
-    generateTweetReplyWithBreaker.fire(originalTweet, systemPrompt),
-  openaiRateLimiter
-);
-
-/**
- * Generate blog post content (internal, unprotected)
- *
- * @param prompt - The prompt describing what the blog post should be about
- * @param systemPrompt - Optional custom system prompt to control tone/style
- * @returns Generated blog post content
- */
-async function generateBlogPostInternal(
+export async function generateJSON<T = unknown>(
   prompt: string,
-  systemPrompt?: string
-): Promise<string> {
-  logger.info(
-    { promptLength: prompt.length, hasSystemPrompt: !!systemPrompt },
-    'Generating blog post with AI'
-  );
+  systemPrompt?: string,
+  model?: string
+): Promise<T> {
+  if (!openaiClient) {
+    throw new Error('OpenAI client not initialized. Set OPENAI_API_KEY.');
+  }
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
 
-  // Only add system prompt if provided by caller
   if (systemPrompt) {
-    messages.push({
-      role: 'system',
-      content: systemPrompt,
-    });
+    messages.push({ role: 'system', content: systemPrompt });
   }
 
-  messages.push({
-    role: 'user',
-    content: prompt,
+  messages.push({ role: 'user', content: prompt });
+
+  const response = await openaiClient.chat.completions.create({
+    model: model || 'gpt-4o-mini',
+    messages,
+    response_format: { type: 'json_object' },
   });
 
-  const model = await getSelectedModel();
-
-  // GPT-5 models don't support any optional parameters (temperature, max_tokens, etc)
-  // Only GPT-4o models support these parameters
-  const isGPT5 = model.startsWith('gpt-5') || model.startsWith('o1') || model.startsWith('o3');
-
-  const completionParams: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming = {
-    model,
-    messages,
-    ...(isGPT5
-      ? {} // No optional parameters for GPT-5
-      : { max_tokens: 2000, temperature: 0.7 } // Higher token limit for blog posts
-    ),
-  };
-
-  const completion = await openai.chat.completions.create(completionParams);
-
-  const result = completion.choices[0]?.message?.content || '';
-  logger.info({ resultLength: result.length }, 'Blog post generated successfully');
-  return result;
+  const content = response.choices[0]?.message?.content || '{}';
+  return JSON.parse(content) as T;
 }
-
-/**
- * Generate blog post content (protected with circuit breaker + rate limiting)
- *
- * @param prompt - The prompt describing what the blog post should be about
- * @param systemPrompt - Optional custom system prompt to control tone/style
- */
-const generateBlogPostWithBreaker = createOpenAICircuitBreaker(generateBlogPostInternal);
-export const generateBlogPost = withRateLimit(
-  (prompt: string, systemPrompt?: string) => generateBlogPostWithBreaker.fire(prompt, systemPrompt),
-  openaiRateLimiter
-);
