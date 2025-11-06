@@ -4,6 +4,8 @@
 
 No drag-and-drop builders. No wiring nodes together. No watching tutorial videos to figure out where the "Add Filter" button is. Just chat with AI, and boom—your automation is running.
 
+**Open source. Free. Self-hostable. No vendor lock-in.**
+
 ---
 
 ## What is this?
@@ -34,7 +36,7 @@ If you've used Zapier, n8n, or Make.com, you know the pain:
 
 **The Make problem:** The visual editor is pretty, but you're still manually wiring things together. And good luck explaining your workflow to someone else when it looks like a bowl of spaghetti.
 
-**b0t's approach:** Chat interface. That's it. The AI figures out the technical details. You get n8n's power with Zapier's ease of use, minus the part where either company holds your wallet hostage.
+**b0t's approach:** Chat interface. That's it. The AI figures out the technical details. You get n8n's power with Zapier's ease of use, minus the part where either company holds your wallet hostage. And it's completely free and open source—run it on your own hardware for the cost of a $5/month VPS.
 
 ---
 
@@ -110,6 +112,18 @@ See your workflows run in real-time with progress bars, step-by-step status, and
 ### Smart Output Formatting
 Results aren't just dumped as JSON. The AI formats them as tables, markdown, lists, or galleries depending on what makes sense. Trending GitHub repos? Table. YouTube video search? Gallery. Reddit posts? Markdown list with metadata.
 
+### Infinitely Extensible (The Real Superpower)
+Here's where b0t destroys the competition: **you can customize literally anything.**
+
+Zapier/Make won't let you modify their integrations. n8n is technically extensible, but good luck figuring out their node system. b0t? Every module is just a TypeScript file. Want to add a custom integration? Drop a file in `src/modules/`, export your functions, done.
+
+**Real cost savings:**
+- Need a custom Stripe webhook handler? Build it yourself instead of paying $299/month for Zapier's "Premium" tier.
+- Want to scrape a competitor's pricing page? Write a 20-line module instead of subscribing to a $99/month scraping API.
+- Need to transform data in a weird way? Write the exact logic you need instead of chaining together 47 "Formatter" steps.
+
+The platform doesn't limit you. If you can code it (or ask AI to code it), you can automate it. No "contact sales for enterprise features" BS.
+
 ### Self-Hosted or Cloud
 Run it on your laptop, your server, or deploy to Railway/Vercel in 5 minutes. You own your data. No vendor lock-in. Export your workflows as JSON, commit them to git, share them with your team.
 
@@ -138,14 +152,17 @@ Built for agencies and teams. Manage automations for multiple clients/organizati
 | **Self-hosting** | Yes (easy setup) | No | Yes (complex setup) | No |
 | **Pricing model** | Per workflow execution | Per "task" (confusing) | Per execution OR self-host | Per operation |
 | **Loops & conditionals** | Full programming logic | Basic filters | Advanced logic | Good routing |
-| **Custom code** | TypeScript modules | No | JavaScript/Python | Limited |
-| **Cost (100 workflows/day)** | ~$15/month self-hosted | $29-75/month | $20/month cloud OR self-host | $9-29/month |
+| **Custom code** | TypeScript modules (easy) | No | JavaScript/Python (complex) | Limited |
+| **Add custom integrations** | Drop a .ts file | Impossible | Build a node (difficult) | Impossible |
+| **Modify existing integrations** | Edit the source | Impossible | Fork & rebuild | Impossible |
+| **Cost (100 workflows/day)** | $0 (free & open source) | $29-75/month | $20/month cloud OR self-host | $9-29/month |
+| **Hidden costs** | None (build what you need) | Premium apps, enterprise features | Hosting/infrastructure | Premium apps |
 | **Version control** | Git-friendly JSON | No | JSON exports | Limited |
 | **Workflow modification** | Chat: "change X to Y" | Re-click everything | Edit nodes manually | Rewire visually |
 | **AI integration** | Deep (Claude generates workflows) | Add-on | Manual setup | Manual setup |
 | **Open source** | AGPL-3.0 | No | Fair-code | No |
 
-**TL;DR:** If you want easy, go Zapier (but bring your credit card). If you want powerful, go n8n (but bring your DevOps skills). If you want both, you're in the right place.
+**TL;DR:** If you want easy, go Zapier (but bring your credit card and accept their limitations). If you want powerful, go n8n (but bring your DevOps skills and accept their complexity). If you want both—easy, powerful, and infinitely customizable—for free, you're in the right place.
 
 ---
 
@@ -279,9 +296,9 @@ Check out [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 ## Who built this?
 
-Made by **Ken Kai** ([Ken Kai does AI](https://x.com/kenkaidoesai)) - mostly because I was tired of clicking through Zapier menus and wanted to just tell a computer what to do.
+Made by **Ken Kai** ([@kenkaidoesai on YouTube](https://youtube.com/@kenkaidoesai)) - mostly because I was tired of clicking through Zapier menus and wanted to just tell a computer what to do.
 
-Started as a weekend project. Turned into 60,000+ lines of production-grade automation infrastructure. Now it's yours.
+Started as a weekend project. Turned into 60,000+ lines of production-grade automation infrastructure. Now it's yours, for free.
 
 ---
 
@@ -298,7 +315,7 @@ Open source. Self-hostable. No vendor lock-in. Fork it, modify it, deploy it, se
 - **Docs:** [Full documentation](./docs/)
 - **Issues:** [GitHub Issues](https://github.com/kenkai/b0t/issues)
 - **Discussions:** [GitHub Discussions](https://github.com/kenkai/b0t/discussions)
-- **Twitter:** [@kenkaidoesai](https://x.com/kenkaidoesai)
+- **YouTube:** [@kenkaidoesai](https://youtube.com/@kenkaidoesai)
 
 ---
 
