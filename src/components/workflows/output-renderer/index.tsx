@@ -19,12 +19,28 @@ interface OutputRendererProps {
 }
 
 export function OutputRenderer({ output, modulePath, displayHint }: OutputRendererProps) {
+  // Auto-parse JSON strings for table display
+  // If output is a JSON string and displayHint expects a table, parse it
+  let parsedOutput = output;
+  if (typeof output === 'string' && displayHint?.type === 'table') {
+    try {
+      // Try to parse as JSON
+      const trimmed = output.trim();
+      if ((trimmed.startsWith('[') && trimmed.endsWith(']')) || (trimmed.startsWith('{') && trimmed.endsWith('}'))) {
+        parsedOutput = JSON.parse(output);
+      }
+    } catch (error) {
+      // If parsing fails, keep original output
+      console.warn('Failed to parse output as JSON:', error);
+    }
+  }
+
   // Priority: 1) displayHint from workflow config, 2) module-based detection, 3) structure-based detection
-  const display = displayHint || detectOutputDisplay(modulePath || '', output);
+  const display = displayHint || detectOutputDisplay(modulePath || '', parsedOutput);
 
   switch (display.type) {
     case 'table':
-      return <DataTable data={output} config={display.config} />;
+      return <DataTable data={parsedOutput} config={display.config} />;
 
     case 'image':
       return <ImageDisplay data={output} config={display.config} />;

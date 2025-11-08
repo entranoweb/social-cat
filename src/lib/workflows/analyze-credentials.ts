@@ -378,9 +378,11 @@ export function analyzeWorkflowCredentials(
           // Only track if this is an actual platform (not a utility module)
           // Check if platform exists in PLATFORM_CAPABILITIES or if it might need credentials
           // Skip utility modules like array-utils, scoring, etc.
+          // Skip ai-sdk since it's just an interface - we detect the actual provider below
           const isUtilityModule = parts[0] === 'utilities' || parts[0] === 'util';
+          const isAiSdk = platform === 'ai-sdk';
 
-          if (!isUtilityModule) {
+          if (!isUtilityModule && !isAiSdk) {
             // Track this platform and function usage
             if (!platformUsage.has(platform)) {
               platformUsage.set(platform, new Set());

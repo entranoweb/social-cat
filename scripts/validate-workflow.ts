@@ -177,6 +177,17 @@ function validateOutputDisplay(workflow: WorkflowExport): string[] {
         `   💡 Solution: Either change the final step to return an array, or change outputDisplay.type to "text" or "json"`
       );
     }
+
+    // Check if using AI generation modules that might return JSON strings
+    const aiModules = ['generateText', 'generateFast', 'generateQuality', 'generateClaudeFast', 'generateClaudeQuality'];
+    if (aiModules.some(mod => lastStep.module.includes(mod))) {
+      warnings.push(
+        `⚠️  REMINDER: Step "${lastStep.id}" uses an AI generation module. If it returns JSON as a string, the system will auto-parse it for table display.`
+      );
+      warnings.push(
+        `   💡 Best practice: Ensure your AI prompt explicitly requests JSON array format and mentions "Return ONLY valid JSON, no markdown code blocks"`
+      );
+    }
   }
 
   return warnings;
