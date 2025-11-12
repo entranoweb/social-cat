@@ -1,5 +1,5 @@
 import { createQueue, createWorker, addJob, queues } from '../queue';
-// @ts-ignore - BullMQ v5 doesn't ship types yet
+// @ts-expect-error - BullMQ v5 doesn't ship types yet
 import type { Job } from 'bullmq';
 import { executeWorkflow } from './executor';
 import { logger } from '../logger';

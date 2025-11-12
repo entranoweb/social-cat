@@ -1,4 +1,4 @@
-// @ts-ignore - BullMQ v5 doesn't ship types yet
+// @ts-expect-error - BullMQ v5 doesn't ship types yet
 import { Queue, Worker, QueueOptions, WorkerOptions, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { logger } from './logger';
