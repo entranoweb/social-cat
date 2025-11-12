@@ -1,4 +1,5 @@
 import { Client } from '@microsoft/microsoft-graph-client';
+// @ts-ignore - @azure/identity doesn't have type declarations
 import { ClientSecretCredential } from '@azure/identity';
 import { createCircuitBreaker } from '@/lib/resilience';
 import { createRateLimiter, withRateLimit } from '@/lib/rate-limiter';

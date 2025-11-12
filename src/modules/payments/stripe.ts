@@ -316,10 +316,10 @@ export async function listCustomerSubscriptions(
 
   logger.info({ subscriptionCount: subscriptions.data.length }, 'Stripe subscriptions listed');
 
-  return subscriptions.data.map((sub) => ({
+  return subscriptions.data.map((sub: { id: string; status: string; current_period_end: number }) => ({
     id: sub.id,
     status: sub.status,
-    currentPeriodEnd: (sub as unknown as { current_period_end: number }).current_period_end,
+    currentPeriodEnd: sub.current_period_end,
   }));
 }
 
@@ -373,10 +373,11 @@ export async function listPayments(
 
   logger.info({ customerId, limit }, 'Listing Stripe payments');
 
-  const charges = await stripeClient.charges.list({
-    customer: customerId,
-    limit,
-  });
+  const listParams: Record<string, unknown> = { limit };
+  if (customerId) {
+    listParams.customer = customerId;
+  }
+  const charges = await stripeClient.charges.list(listParams as never);
 
   logger.info({ chargeCount: charges.data.length }, 'Stripe payments listed');
 

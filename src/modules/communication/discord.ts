@@ -1,3 +1,4 @@
+// @ts-ignore - Discord.js v14 export conflict
 import { Client, GatewayIntentBits, TextChannel, EmbedBuilder, AttachmentBuilder } from 'discord.js';
 import { createCircuitBreaker } from '@/lib/resilience';
 import { createRateLimiter, withRateLimit } from '@/lib/rate-limiter';

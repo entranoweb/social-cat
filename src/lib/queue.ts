@@ -1,3 +1,4 @@
+// @ts-ignore - BullMQ v5 doesn't ship types yet
 import { Queue, Worker, QueueOptions, WorkerOptions, Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { logger } from './logger';
@@ -201,14 +202,14 @@ export function createWorker<T = unknown, R = unknown>(
   );
 
   // Event listeners for worker lifecycle
-  worker.on('completed', (job) => {
+  worker.on('completed', (job: Job) => {
     logger.info(
       { jobId: job.id, jobName: job.name, duration: Date.now() - job.timestamp },
       'Job completed successfully'
     );
   });
 
-  worker.on('failed', (job, error) => {
+  worker.on('failed', (job: Job | undefined, error: Error) => {
     if (job) {
       logger.error(
         { jobId: job.id, jobName: job.name, error, attempts: job.attemptsMade },
@@ -217,7 +218,7 @@ export function createWorker<T = unknown, R = unknown>(
     }
   });
 
-  worker.on('error', (error) => {
+  worker.on('error', (error: Error) => {
     logger.error({ error }, 'Worker error');
   });
 

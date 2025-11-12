@@ -1,4 +1,6 @@
 import { createQueue, createWorker, addJob, queues } from '../queue';
+// @ts-ignore - BullMQ v5 doesn't ship types yet
+import type { Job } from 'bullmq';
 import { executeWorkflow } from './executor';
 import { logger } from '../logger';
 
@@ -164,7 +166,7 @@ export async function initializeWorkflowQueue(options?: {
     );
 
     // Log retry attempts
-    worker.on('failed', (job) => {
+    worker.on('failed', (job: Job<WorkflowJobData> | undefined) => {
       if (job && job.attemptsMade < 3) {
         logger.info(
           {

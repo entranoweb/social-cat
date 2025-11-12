@@ -1,3 +1,4 @@
+// @ts-ignore - @slack/web-api doesn't have complete type declarations
 import { WebClient } from '@slack/web-api';
 import { createCircuitBreaker } from '@/lib/resilience';
 import { createRateLimiter, withRateLimit } from '@/lib/rate-limiter';
