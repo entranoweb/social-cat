@@ -308,6 +308,173 @@ Access: `{{result.text}}`
 
 ---
 
+## Workflow Storage (Persistent Data Across Runs)
+
+**When to use:** Workflow needs to remember data between executions (deduplication, state tracking, caching).
+
+**Common use cases:**
+- Track replied tweets/comments (avoid duplicates)
+- Store processed item IDs
+- Cache API responses temporarily
+- Maintain counters across runs
+
+**Available functions:**
+- `data.drizzle-utils.insertRecord` - Store data
+- `data.drizzle-utils.queryWhereIn` - Check for duplicates (batch)
+- `data.drizzle-utils.queryRecords` - Query with filters
+- `data.drizzle-utils.updateRecord` - Update existing records
+- `data.drizzle-utils.deleteRecord` - Delete records
+
+**CRITICAL: Always pass `workflowId: "{{workflowId}}"` for automatic table namespacing**
+
+### Example: Tweet Reply Deduplication
+
+```json
+{
+  "version": "1.0",
+  "name": "Reply to Tweets (No Duplicates)",
+  "description": "Find tweets, check if already replied, reply to new ones only",
+  "trigger": { "type": "cron", "config": { "schedule": "0 * * * *" } },
+  "config": {
+    "steps": [
+      {
+        "id": "fetch",
+        "module": "social.twitter.searchTweets",
+        "inputs": { "query": "AI automation", "maxResults": 10 },
+        "outputAs": "tweets"
+      },
+      {
+        "id": "extract_ids",
+        "module": "utilities.array-utils.pluck",
+        "inputs": { "arr": "{{tweets}}", "key": "id" },
+        "outputAs": "tweetIds"
+      },
+      {
+        "id": "check_duplicates",
+        "module": "data.drizzle-utils.queryWhereIn",
+        "inputs": {
+          "params": {
+            "workflowId": "{{workflowId}}",
+            "tableName": "replied_tweets",
+            "column": "tweet_id",
+            "values": "{{tweetIds}}"
+          }
+        },
+        "outputAs": "alreadyReplied"
+      },
+      {
+        "id": "filter_new",
+        "module": "utilities.javascript.execute",
+        "inputs": {
+          "code": "return tweets.filter(t => !alreadyReplied.includes(t.id))"
+        },
+        "outputAs": "newTweets"
+      },
+      {
+        "id": "reply_loop",
+        "type": "forEach",
+        "array": "{{newTweets}}",
+        "itemAs": "tweet",
+        "steps": [
+          {
+            "id": "generate_reply",
+            "module": "ai.ai-sdk.generateText",
+            "inputs": {
+              "options": {
+                "model": "gpt-4o-mini",
+                "prompt": "Write a helpful reply to: {{tweet.text}}"
+              }
+            },
+            "outputAs": "reply"
+          },
+          {
+            "id": "post_reply",
+            "module": "social.twitter.replyToTweet",
+            "inputs": {
+              "tweetId": "{{tweet.id}}",
+              "text": "{{reply.content}}"
+            },
+            "outputAs": "posted"
+          },
+          {
+            "id": "store_replied",
+            "module": "data.drizzle-utils.insertRecord",
+            "inputs": {
+              "params": {
+                "workflowId": "{{workflowId}}",
+                "tableName": "replied_tweets",
+                "data": {
+                  "tweet_id": "{{tweet.id}}",
+                  "reply_text": "{{reply.content}}",
+                  "replied_at": "{{posted.createdAt}}"
+                },
+                "expiresInDays": 7
+              }
+            },
+            "outputAs": "stored"
+          }
+        ]
+      }
+    ],
+    "returnValue": "{{newTweets}}"
+  }
+}
+```
+
+**Key Features:**
+
+1. **Automatic table creation** - No schema needed, columns inferred from data
+2. **Workflow-scoped** - Tables named `workflow_storage_{workflowId}_{tableName}`
+3. **Auto-expiration** - Use `expiresInDays` for TTL (optional)
+4. **Dynamic schema** - Add new fields anytime, columns auto-add
+
+**Parameters (ALL require `params` wrapper):**
+
+**insertRecord:**
+```json
+"inputs": {
+  "params": {
+    "workflowId": "{{workflowId}}",
+    "tableName": "replied_tweets",
+    "data": { "tweet_id": "123", "status": "replied" },
+    "expiresInDays": 7
+  }
+}
+```
+- `workflowId`: `"{{workflowId}}"` (required for scoping)
+- `tableName`: Your table name (e.g., "replied_tweets")
+- `data`: Object with any fields
+- `expiresInDays`: Optional auto-delete after N days
+
+**queryWhereIn (batch duplicate check):**
+```json
+"inputs": {
+  "params": {
+    "workflowId": "{{workflowId}}",
+    "tableName": "replied_tweets",
+    "column": "tweet_id",
+    "values": "{{tweetIds}}"
+  }
+}
+```
+- Returns: Array of values that exist in the table
+
+**queryRecords:**
+```json
+"inputs": {
+  "params": {
+    "workflowId": "{{workflowId}}",
+    "tableName": "replied_tweets",
+    "where": {"status": "pending"},
+    "limit": 100
+  }
+}
+```
+- `where`: Optional filters
+- `limit`: Max records to return
+
+---
+
 ## Quick Reference
 
 **Variable syntax:**

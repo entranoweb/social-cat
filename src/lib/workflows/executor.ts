@@ -118,6 +118,7 @@ export async function executeWorkflow(
     // Initialize execution context
     const context: ExecutionContext = {
       variables: {
+        workflowId, // Add workflowId for workflow-scoped storage
         user: {
           id: userId,
           ...userCredentials, // e.g., { openai: "sk-...", stripe: "sk_test_..." }
@@ -959,6 +960,7 @@ export async function executeWorkflowConfig(
 
   const context: ExecutionContext = {
     variables: {
+      workflowId: 'inline', // Add workflowId for workflow-scoped storage
       user: {
         id: userId,
         ...userCredentials,

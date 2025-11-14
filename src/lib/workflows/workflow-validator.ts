@@ -218,7 +218,7 @@ export function validateModulePaths(steps: Array<{ id: string; module: string }>
  */
 export function validateVariableReferences(steps: Array<{ id: string; inputs: Record<string, unknown>; outputAs?: string }>): ValidationResult {
   const errors: ValidationError[] = [];
-  const declaredVars = new Set<string>(['user', 'trigger']); // Built-in variables
+  const declaredVars = new Set<string>(['user', 'trigger', 'credential', 'workflowId']); // Built-in variables
 
   steps.forEach((step, index) => {
     // Check variable references in inputs
@@ -290,6 +290,179 @@ export function validateOutputDisplay(
 }
 
 /**
+ * Validate AI SDK usage
+ */
+function validateAISDK(steps: Array<{ id: string; module: string; inputs: Record<string, unknown> }>): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const aiSDKModules = [
+    'ai.ai-sdk.generateText',
+    'ai.ai-sdk.generateJSON',
+    'ai.ai-sdk.chat',
+    'ai.ai-sdk.streamText'
+  ];
+
+  steps.forEach((step, index) => {
+    if (!aiSDKModules.includes(step.module)) return;
+
+    const inputs = step.inputs as Record<string, unknown>;
+    const options = inputs.options as Record<string, unknown> | undefined;
+
+    // Check if options wrapper exists
+    if (!options) {
+      errors.push({
+        path: `/config/steps/${index}/inputs`,
+        message: 'AI SDK functions require "options" wrapper',
+        keyword: 'missing-options-wrapper',
+        suggestion: 'Wrap parameters in "options": { ... }. Example: "inputs": { "options": { "prompt": "...", "model": "gpt-4o-mini", "apiKey": "{{credential.openai_api_key}}" } }'
+      });
+      return;
+    }
+
+    // Check for required apiKey field (critical for execution)
+    if (!options.apiKey) {
+      errors.push({
+        path: `/config/steps/${index}/inputs/options`,
+        message: 'AI SDK requires explicit "apiKey" parameter',
+        keyword: 'missing-apiKey',
+        suggestion: 'Add "apiKey": "{{credential.openai_api_key}}" or "{{credential.anthropic_api_key}}" inside options'
+      });
+    }
+
+    // Check for model field
+    if (!options.model) {
+      errors.push({
+        path: `/config/steps/${index}/inputs/options`,
+        message: 'AI SDK requires "model" parameter',
+        keyword: 'missing-model',
+        suggestion: 'Add "model": "gpt-4o-mini" or "claude-haiku-4-5-20251001" inside options'
+      });
+    }
+
+    // Check for prompt field
+    if (!options.prompt && !options.messages) {
+      errors.push({
+        path: `/config/steps/${index}/inputs/options`,
+        message: 'AI SDK requires either "prompt" or "messages" parameter',
+        keyword: 'missing-prompt',
+        suggestion: 'Add "prompt": "Your prompt here" or "messages": [...] inside options'
+      });
+    }
+  });
+
+  return errors;
+}
+
+/**
+ * Validate workflow storage usage
+ */
+function validateWorkflowStorage(steps: Array<{ id: string; module: string; inputs: Record<string, unknown> }>): ValidationError[] {
+  const errors: ValidationError[] = [];
+  const storageModules = [
+    'data.drizzle-utils.insertRecord',
+    'data.drizzle-utils.queryWhereIn',
+    'data.drizzle-utils.queryRecords',
+    'data.drizzle-utils.updateRecord',
+    'data.drizzle-utils.deleteRecord'
+  ];
+
+  steps.forEach((step, index) => {
+    if (!storageModules.includes(step.module)) return;
+
+    const inputs = step.inputs as Record<string, unknown>;
+    const params = inputs.params as Record<string, unknown> | undefined;
+
+    // Check if params wrapper is used (required for drizzle-utils)
+    if (!params) {
+      errors.push({
+        path: `/config/steps/${index}/inputs`,
+        message: 'data.drizzle-utils functions require "params" wrapper',
+        keyword: 'missing-params-wrapper',
+        suggestion: 'Wrap parameters in "params": { ... }. Example: "inputs": { "params": { "workflowId": "{{workflowId}}", "tableName": "...", ... } }'
+      });
+      // Skip further validation if no params wrapper
+      return;
+    }
+
+    // Check if workflowId is provided for workflow-scoped storage
+    if (!params.workflowId) {
+      errors.push({
+        path: `/config/steps/${index}/inputs/params`,
+        message: 'Workflow storage module used without workflowId parameter',
+        keyword: 'missing-workflowId',
+        suggestion: 'Add "workflowId": "{{workflowId}}" inside params for automatic table namespacing and isolation. This prevents conflicts between workflows.'
+      });
+    }
+
+    // Validate workflowId format (should be {{workflowId}})
+    const workflowId = params.workflowId;
+    if (workflowId && typeof workflowId === 'string') {
+      if (!workflowId.includes('{{workflowId}}')) {
+        errors.push({
+          path: `/config/steps/${index}/inputs/params/workflowId`,
+          message: 'workflowId should use variable reference {{workflowId}} not a hardcoded value',
+          keyword: 'invalid-workflowId',
+          suggestion: 'Change to "workflowId": "{{workflowId}}" to use the current workflow\'s ID'
+        });
+      }
+    }
+
+    // Check tableName is provided
+    if (!params.tableName) {
+      errors.push({
+        path: `/config/steps/${index}/inputs/params`,
+        message: 'tableName parameter is required for workflow storage',
+        keyword: 'missing-tableName',
+        suggestion: 'Add "tableName": "your_table_name" inside params (e.g., "replied_tweets", "processed_items")'
+      });
+    }
+
+    // Validate expiresInDays is a reasonable number
+    const expiresInDays = params.expiresInDays;
+    if (expiresInDays !== undefined) {
+      if (typeof expiresInDays !== 'number' || expiresInDays < 1 || expiresInDays > 365) {
+        errors.push({
+          path: `/config/steps/${index}/inputs/params/expiresInDays`,
+          message: 'expiresInDays must be a number between 1 and 365',
+          keyword: 'invalid-expiresInDays',
+          suggestion: 'Common values: 7 (one week), 30 (one month), 90 (three months)'
+        });
+      }
+    }
+
+    // Validate specific function requirements
+    if (step.module === 'data.drizzle-utils.insertRecord' && !params.data) {
+      errors.push({
+        path: `/config/steps/${index}/inputs/params`,
+        message: 'insertRecord requires "data" parameter with fields to insert',
+        keyword: 'missing-data',
+        suggestion: 'Add "data": { "field1": "value1", "field2": "value2", ... } inside params'
+      });
+    }
+
+    if (step.module === 'data.drizzle-utils.queryWhereIn') {
+      if (!params.column) {
+        errors.push({
+          path: `/config/steps/${index}/inputs/params`,
+          message: 'queryWhereIn requires "column" parameter',
+          keyword: 'missing-column',
+          suggestion: 'Add "column": "field_name" (e.g., "tweet_id", "item_id") inside params'
+        });
+      }
+      if (!params.values) {
+        errors.push({
+          path: `/config/steps/${index}/inputs/params`,
+          message: 'queryWhereIn requires "values" parameter (array to check)',
+          keyword: 'missing-values',
+          suggestion: 'Add "values": "{{arrayVariable}}" inside params'
+        });
+      }
+    }
+  });
+
+  return errors;
+}
+
+/**
  * Comprehensive workflow validation
  */
 export function validateWorkflowComplete(workflow: unknown): ValidationResult {
@@ -314,6 +487,14 @@ export function validateWorkflowComplete(workflow: unknown): ValidationResult {
     const triggerResult = validateTrigger(w.trigger);
     allErrors.push(...triggerResult.errors);
   }
+
+  // Validate AI SDK usage
+  const aiSDKErrors = validateAISDK(w.config.steps);
+  allErrors.push(...aiSDKErrors);
+
+  // Validate workflow storage usage
+  const storageErrors = validateWorkflowStorage(w.config.steps);
+  allErrors.push(...storageErrors);
 
   // Validate module paths
   const moduleResult = validateModulePaths(w.config.steps);

@@ -8,8 +8,9 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
 import { Button } from '@/components/ui/button';
-import { Copy, Download, Check } from 'lucide-react';
-import { useState } from 'react';
+import { Copy, Download, Check, X } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import dynamic from 'next/dynamic';
 
@@ -19,9 +20,10 @@ interface OutputRendererProps {
   output: unknown;
   modulePath?: string;
   displayHint?: OutputDisplayConfig;
+  onClose?: () => void;
 }
 
-export function OutputRenderer({ output, modulePath, displayHint }: OutputRendererProps) {
+export function OutputRenderer({ output, modulePath, displayHint, onClose }: OutputRendererProps) {
 
   // Auto-parse JSON strings for table display
   // If output is a JSON string and displayHint expects a table, parse it
@@ -58,7 +60,7 @@ export function OutputRenderer({ output, modulePath, displayHint }: OutputRender
 
   switch (display.type) {
     case 'table':
-      return <DataTable data={parsedOutput} config={display.config} />;
+      return <DataTable data={parsedOutput} config={display.config} onClose={onClose} />;
 
     case 'image':
       return <ImageDisplay data={output} config={display.config} />;
@@ -67,23 +69,38 @@ export function OutputRenderer({ output, modulePath, displayHint }: OutputRender
       return <ImageGrid data={output} config={display.config} />;
 
     case 'markdown':
-      return <MarkdownDisplay content={output} />;
+      return <MarkdownDisplay content={output} onClose={onClose} />;
 
     case 'text':
-      return <TextDisplay content={output} />;
+      return <TextDisplay content={output} onClose={onClose} />;
 
     case 'list':
-      return <ListDisplay data={output} />;
+      return <ListDisplay data={output} onClose={onClose} />;
 
     case 'json':
     default:
-      return <JSONDisplay data={output} />;
+      return <JSONDisplay data={output} onClose={onClose} />;
   }
 }
 
-// Action buttons component for copy/download
-function ActionButtons({ content, filename, format }: { content: string; filename: string; format: 'md' | 'txt' | 'json' | 'csv' }) {
+// Floating action buttons component for all output types
+function FloatingActionButtons({
+  content,
+  filename,
+  format,
+  onClose
+}: {
+  content: string;
+  filename: string;
+  format: 'md' | 'txt' | 'json' | 'csv';
+  onClose?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const handleCopy = async () => {
     try {
@@ -109,13 +126,33 @@ function ActionButtons({ content, filename, format }: { content: string; filenam
     toast.success(`Downloaded as ${filename}.${format}`);
   };
 
-  return (
-    <div className="flex gap-2">
+  const buttons = (
+    <div
+      style={{
+        position: 'fixed',
+        top: '80px',
+        right: '24px',
+        zIndex: 9999,
+        display: 'flex',
+        gap: '8px'
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+    >
       <Button
         size="sm"
         variant="outline"
-        onClick={handleCopy}
-        className="h-8 gap-2"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleCopy();
+        }}
+        className="h-8 gap-2 bg-background shadow-xl border-2 border-primary/20"
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
         {copied ? 'Copied' : 'Copy'}
@@ -123,26 +160,43 @@ function ActionButtons({ content, filename, format }: { content: string; filenam
       <Button
         size="sm"
         variant="outline"
-        onClick={handleDownload}
-        className="h-8 gap-2"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDownload();
+        }}
+        className="h-8 gap-2 bg-background shadow-xl border-2 border-primary/20"
       >
         <Download className="h-3.5 w-3.5" />
         Download
       </Button>
+      {onClose && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="h-8 gap-2 bg-background shadow-xl border-2 border-primary/20"
+        >
+          <X className="h-3.5 w-3.5" />
+          Close
+        </Button>
+      )}
     </div>
   );
+
+  return mounted ? createPortal(buttons, document.body) : null;
 }
 
-function MarkdownDisplay({ content }: { content: unknown }) {
+function MarkdownDisplay({ content, onClose }: { content: unknown; onClose?: () => void }) {
   const text = String(content);
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <ActionButtons content={text} filename="output" format="md" />
-      </div>
+    <>
+      <FloatingActionButtons content={text} filename="output" format="md" onClose={onClose} />
       <div className="prose prose-sm dark:prose-invert max-w-none rounded-lg border border-border/50 bg-surface/50 p-6">
-      <ReactMarkdown
+        <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, rehypeSanitize]}
         components={{
@@ -245,26 +299,24 @@ function MarkdownDisplay({ content }: { content: unknown }) {
         {text}
       </ReactMarkdown>
       </div>
-    </div>
+    </>
   );
 }
 
-function TextDisplay({ content }: { content: unknown }) {
+function TextDisplay({ content, onClose }: { content: unknown; onClose?: () => void }) {
   const text = String(content);
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <ActionButtons content={text} filename="output" format="txt" />
-      </div>
+    <>
+      <FloatingActionButtons content={text} filename="output" format="txt" onClose={onClose} />
       <div className="rounded-lg border border-border/50 bg-surface/50 p-4">
         <div className="text-sm whitespace-pre-wrap break-words">{text}</div>
       </div>
-    </div>
+    </>
   );
 }
 
-function ListDisplay({ data }: { data: unknown }) {
+function ListDisplay({ data, onClose }: { data: unknown; onClose?: () => void }) {
   if (!Array.isArray(data)) {
     return <div className="text-sm text-muted-foreground">Invalid list data</div>;
   }
@@ -272,10 +324,8 @@ function ListDisplay({ data }: { data: unknown }) {
   const text = data.map((item) => String(item)).join('\n');
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <ActionButtons content={text} filename="list-output" format="txt" />
-      </div>
+    <>
+      <FloatingActionButtons content={text} filename="list-output" format="txt" onClose={onClose} />
       <div className="rounded-lg border border-border/50 bg-surface/50 p-4">
         <ul className="space-y-2 list-disc list-inside">
           {data.map((item, idx) => (
@@ -285,11 +335,11 @@ function ListDisplay({ data }: { data: unknown }) {
           ))}
         </ul>
       </div>
-    </div>
+    </>
   );
 }
 
-function JSONDisplay({ data }: { data: unknown }) {
+function JSONDisplay({ data, onClose }: { data: unknown; onClose?: () => void }) {
   // Parse data if it's a string
   let jsonData: unknown = data;
   if (typeof data === 'string') {
@@ -303,10 +353,8 @@ function JSONDisplay({ data }: { data: unknown }) {
   const jsonString = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        <ActionButtons content={jsonString} filename="output" format="json" />
-      </div>
+    <>
+      <FloatingActionButtons content={jsonString} filename="output" format="json" onClose={onClose} />
       <div className="rounded-lg border border-border/50 bg-muted/20 p-4 overflow-y-auto max-h-[70vh]">
         <ReactJson
           src={jsonData as object}
@@ -322,6 +370,6 @@ function JSONDisplay({ data }: { data: unknown }) {
           }}
         />
       </div>
-    </div>
+    </>
   );
 }

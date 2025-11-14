@@ -182,10 +182,16 @@ export function RunOutputModal({
       } as OutputDisplayConfig)
     : undefined;
 
+  // Hide default close button for all output types (we have floating buttons now)
+  const hasOutput = run?.status === 'success' && run.output;
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className={isChatWorkflow ? "sm:max-w-2xl max-h-[85vh] flex flex-col" : "!max-w-[98vw] !w-[98vw] max-h-[95vh] overflow-auto p-6 pt-12"}>
+        <DialogContent
+          className={isChatWorkflow ? "sm:max-w-2xl max-h-[85vh] flex flex-col" : "!max-w-[98vw] !w-[98vw] max-h-[95vh] overflow-auto p-6 pt-12"}
+          showCloseButton={!hasOutput}
+        >
           {isChatWorkflow ? (
             <>
               <DialogHeader>
@@ -317,6 +323,7 @@ export function RunOutputModal({
               output={processedOutput}
               modulePath={modulePath}
               displayHint={outputDisplayHint}
+              onClose={() => onOpenChange(false)}
             />
           </>
         ) : run.status === 'error' ? (
