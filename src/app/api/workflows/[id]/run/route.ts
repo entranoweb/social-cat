@@ -4,6 +4,9 @@ import { logger } from '@/lib/logger';
 import { queueWorkflowExecution, isWorkflowQueueAvailable } from '@/lib/workflows/workflow-queue';
 import { executeWorkflow } from '@/lib/workflows/executor';
 import { checkStrictRateLimit } from '@/lib/ratelimit';
+import { db } from '@/lib/db';
+import { workflowsTable } from '@/lib/schema';
+import { eq, and } from 'drizzle-orm';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +37,29 @@ export async function POST(
   const { id } = await context.params;
 
   try {
+    // Verify workflow ownership
+    const workflows = await db
+      .select()
+      .from(workflowsTable)
+      .where(
+        and(
+          eq(workflowsTable.id, id),
+          eq(workflowsTable.userId, session.user.id)
+        )
+      )
+      .limit(1);
+
+    if (workflows.length === 0) {
+      logger.warn(
+        { workflowId: id, userId: session.user.id },
+        'Workflow not found or access denied'
+      );
+      return NextResponse.json(
+        { error: 'Workflow not found or access denied' },
+        { status: 404 }
+      );
+    }
+
     // Optional: Accept trigger data, trigger type, and priority from request body
     const body = await request.json().catch(() => ({}));
     const triggerData = body.triggerData || {};

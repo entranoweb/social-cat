@@ -1,8 +1,15 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { executeWorkflowWithProgress } from '@/lib/workflows/executor-stream';
+import { db } from '@/lib/db';
+import { workflowsTable } from '@/lib/schema';
+import { eq, and } from 'drizzle-orm';
+import { z } from 'zod';
 
 export const dynamic = 'force-dynamic';
+
+// Zod schema for trigger data validation
+const triggerDataSchema = z.record(z.string(), z.unknown());
 
 /**
  * Helper to create SSE stream with workflow execution
@@ -71,19 +78,57 @@ export async function GET(
 
   const { id } = await context.params;
 
-  // Parse trigger type and data from query params
-  const { searchParams } = new URL(request.url);
-  const triggerType = searchParams.get('triggerType') || 'manual';
-  const triggerDataParam = searchParams.get('triggerData');
-  const triggerData = triggerDataParam ? JSON.parse(triggerDataParam) : undefined;
+  try {
+    // Verify workflow ownership
+    const workflows = await db
+      .select()
+      .from(workflowsTable)
+      .where(
+        and(
+          eq(workflowsTable.id, id),
+          eq(workflowsTable.userId, session.user.id)
+        )
+      )
+      .limit(1);
 
-  const stream = await createWorkflowStream(id, session.user.id, triggerType, triggerData);
+    if (workflows.length === 0) {
+      return new Response(JSON.stringify({ error: 'Workflow not found or access denied' }), {
+        status: 404,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  });
+    // Parse trigger type and data from query params with validation
+    const { searchParams } = new URL(request.url);
+    const triggerType = searchParams.get('triggerType') || 'manual';
+    const triggerDataParam = searchParams.get('triggerData');
+
+    let triggerData: Record<string, unknown> | undefined;
+    if (triggerDataParam) {
+      try {
+        const parsed = JSON.parse(triggerDataParam);
+        triggerData = triggerDataSchema.parse(parsed);
+      } catch {
+        return new Response(JSON.stringify({ error: 'Invalid trigger data format' }), {
+          status: 400,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    const stream = await createWorkflowStream(id, session.user.id, triggerType, triggerData);
+
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
+  } catch {
+    return new Response(JSON.stringify({ error: 'Failed to execute workflow' }), {
+      status: 500,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
 }

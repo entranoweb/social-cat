@@ -27,6 +27,66 @@ export function getModuleRegistry(): ModuleCategory[] {
       name: 'ai',
       modules: [
         {
+          name: 'ai-agent-stream',
+          functions: [
+            {
+              name: 'streamAgent',
+              description: "Stream an AI agent with step-by-step tracking",
+              signature: 'streamAgent(options)',
+            },
+            {
+              name: 'runStreamingAgent',
+              description: "Convenience function: Stream agent and collect full response",
+              signature: 'runStreamingAgent(options)',
+            },
+            {
+              name: 'streamSocialAgent',
+              description: "Convenience function: Stream social media agent",
+              signature: 'streamSocialAgent(prompt, credentials?, onStep?)',
+            },
+            {
+              name: 'streamCommunicationAgent',
+              description: "Convenience function: Stream communication agent",
+              signature: 'streamCommunicationAgent(prompt, credentials?, onStep?)',
+            },
+            {
+              name: 'streamDataAgent',
+              description: "Convenience function: Stream data agent",
+              signature: 'streamDataAgent(prompt, credentials?, onStep?)',
+            },
+          ],
+        },
+        {
+          name: 'ai-agent',
+          functions: [
+            {
+              name: 'runAgent',
+              description: "Run an AI agent with tool access (main export)",
+              signature: 'runAgent(options)',
+            },
+            {
+              name: 'runSocialAgent',
+              description: "Convenience function: Run agent with social media tools",
+              signature: 'runSocialAgent(prompt, credentials?)',
+            },
+            {
+              name: 'runCommunicationAgent',
+              description: "Convenience function: Run agent with communication tools",
+              signature: 'runCommunicationAgent(prompt, credentials?)',
+            },
+            {
+              name: 'runDataAgent',
+              description: "Convenience function: Run agent with data/analysis tools",
+              signature: 'runDataAgent(prompt, credentials?)',
+            },
+            {
+              name: 'runUniversalAgent',
+              description: "Convenience function: Run agent with all available tools",
+              signature: 'runUniversalAgent(prompt, credentials?, maxTools?)',
+            },
+          ],
+        },
+        {
           name: 'ai-sdk',
           functions: [
             {
@@ -68,6 +128,36 @@ export function getModuleRegistry(): ModuleCategory[] {
               name: 'generateClaudeQuality',
               description: "High quality Claude generation with Sonnet",
               signature: 'generateClaudeQuality(prompt, systemPrompt?, apiKey?)',
+            },
+          ],
+        },
+        {
+          name: 'ai-tools',
+          functions: [
+            {
+              name: 'generateToolsFromModules',
+              description: "Generate AI SDK tools from module registry",
+              signature: 'generateToolsFromModules(options?)',
+            },
+            {
+              name: 'generateToolsForCategory',
+              description: "Generate tools for a specific category (convenience function)",
+              signature: 'generateToolsForCategory(categoryName, credentials?)',
+            },
+            {
+              name: 'generateAgentTools',
+              description: "Generate a focused tool set for common agent use cases",
+              signature: 'generateAgentTools(preset, credentials?)',
+            },
+            {
+              name: 'getToolCount',
+              description: "Get tool count for a given configuration",
+              signature: 'getToolCount(options?)',
+            },
+            {
+              name: 'listAvailableTools',
+              description: "List available tools for a given configuration",
+              signature: 'listAvailableTools(options?)',
             },
           ],
         },
@@ -5261,28 +5351,8 @@ export function getModuleRegistry(): ModuleCategory[] {
           name: 'deduplication',
           functions: [
             {
-              name: 'filterProcessed',
-              description: "Deduplication Module",
-              signature: 'filterProcessed(params)',
-            },
-            {
-              name: 'hasProcessed',
-              description: "Execute hasProcessed",
-              signature: 'hasProcessed(params)',
-            },
-            {
-              name: 'filterProcessedItems',
-              description: "Execute filterProcessedItems",
-              signature: 'filterProcessedItems(params)',
-            },
-            {
-              name: 'markAsProcessed',
-              description: "Execute markAsProcessed",
-              signature: 'markAsProcessed(params)',
-            },
-            {
               name: 'deduplicateBy',
-              description: "In-Memory Deduplication Functions",
+              description: "Deduplication Module",
               signature: 'deduplicateBy(params)',
             },
             {

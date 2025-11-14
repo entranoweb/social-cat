@@ -22,9 +22,10 @@ if (process.env.NODE_ENV === 'production' || process.env.LOG_DB_CONFIG === 'true
 }
 
 // Configurable connection pool for scaling
-// Development: 20 connections (single instance)
+// Updated defaults to match worker concurrency (25) + overhead for web requests
+// Development: 30 connections (single instance) - matches 25 worker concurrency + 5 for web
 // Production: 100 connections (vertical scaling) or 50 per worker (horizontal scaling)
-const maxConnections = parseInt(process.env.DB_POOL_MAX || '20', 10);
+const maxConnections = parseInt(process.env.DB_POOL_MAX || '30', 10);
 const minConnections = parseInt(process.env.DB_POOL_MIN || '5', 10);
 const connectionTimeoutMs = parseInt(process.env.DB_CONNECTION_TIMEOUT || '30000', 10);
 const idleTimeoutMs = parseInt(process.env.DB_IDLE_TIMEOUT || '30000', 10);

@@ -393,6 +393,18 @@ const PLATFORM_CAPABILITIES: Record<string, PlatformCapability> = {
       'sendMessage': 'api_key',
     },
   },
+
+  // ============================================
+  // MCP (MODEL CONTEXT PROTOCOL) SERVERS
+  // ============================================
+
+  // MCP servers used by AI agents
+  'tavily': { category: 'api_key' }, // Tavily search MCP server
+  'brave': { category: 'api_key' }, // Brave search MCP server
+  'postgres_connection': { category: 'api_key' }, // PostgreSQL MCP server
+  'github_token': { category: 'api_key' }, // GitHub MCP server
+  'slack_bot': { category: 'api_key' }, // Slack MCP server
+  'google_oauth': { category: 'api_key' }, // Google Drive MCP server
 };
 
 /**
@@ -470,10 +482,12 @@ export function analyzeWorkflowCredentials(
           // Check if platform exists in PLATFORM_CAPABILITIES or if it might need credentials
           // Skip utility modules like array-utils, scoring, etc.
           // Skip ai-sdk since it's just an interface - we detect the actual provider below
+          // Skip ai-agent since it's just a wrapper - we detect the actual provider below
           const isUtilityModule = parts[0] === 'utilities' || parts[0] === 'util';
           const isAiSdk = platform === 'ai-sdk';
+          const isAiAgent = platform === 'ai-agent';
 
-          if (!isUtilityModule && !isAiSdk) {
+          if (!isUtilityModule && !isAiSdk && !isAiAgent) {
             // Track this platform and function usage
             if (!platformUsage.has(platform)) {
               platformUsage.set(platform, new Set());
@@ -510,6 +524,59 @@ export function analyzeWorkflowCredentials(
               if (!platformUsage.has(detectedProvider)) {
                 platformUsage.set(detectedProvider, new Set());
               }
+            }
+          }
+        }
+
+        // Special handling for AI agents with MCP tools
+        if (modulePath.includes('ai-agent') || modulePath.includes('runAgent')) {
+          const inputs = s.inputs as Record<string, unknown> | undefined;
+          const options = (inputs?.options as Record<string, unknown> | undefined) || inputs;
+          const toolOptions = options?.toolOptions as Record<string, unknown> | undefined;
+
+          // Check if agent is using MCP tools
+          if (toolOptions?.useMCP) {
+            const mcpServers = toolOptions.mcpServers as string[] | undefined;
+
+            if (mcpServers && Array.isArray(mcpServers)) {
+              // Only track MCP servers that require credentials
+              // Map server names to credential platform names (only for servers with credentials)
+              const serverCredentialMap: Record<string, string> = {
+                'tavily-search': 'tavily',
+                'brave-search': 'brave',
+                'postgres': 'postgres_connection',
+                'github': 'github_token',
+                'slack': 'slack_bot',
+                'google-drive': 'google_oauth',
+              };
+
+              for (const serverName of mcpServers) {
+                const credentialPlatform = serverCredentialMap[serverName];
+
+                // Only add to platform usage if this server requires credentials
+                if (credentialPlatform) {
+                  if (!platformUsage.has(credentialPlatform)) {
+                    platformUsage.set(credentialPlatform, new Set(['MCP']));
+                  }
+                }
+              }
+            }
+          }
+
+          // Also detect the AI provider for the agent itself
+          const provider = options?.provider as string | undefined;
+          const model = options?.model as string | undefined;
+
+          let detectedProvider: string | null = null;
+          if (provider === 'anthropic' || (model && (model.includes('claude') || model.includes('anthropic')))) {
+            detectedProvider = 'anthropic';
+          } else if (provider === 'openai' || (model && (model.includes('gpt') || model.includes('o1') || model.includes('o3')))) {
+            detectedProvider = 'openai';
+          }
+
+          if (detectedProvider) {
+            if (!platformUsage.has(detectedProvider)) {
+              platformUsage.set(detectedProvider, new Set());
             }
           }
         }
@@ -736,6 +803,14 @@ export function getPlatformDisplayName(platform: string): string {
 
     // Enterprise Communication
     'microsoft-teams': 'Microsoft Teams',
+
+    // MCP (Model Context Protocol) Servers
+    tavily: 'Tavily Search',
+    brave: 'Brave Search',
+    postgres_connection: 'PostgreSQL Connection',
+    github_token: 'GitHub Token (MCP)',
+    slack_bot: 'Slack Bot',
+    google_oauth: 'Google OAuth',
   };
 
   return names[platform] || platform.charAt(0).toUpperCase() + platform.slice(1);
@@ -819,6 +894,14 @@ export function getPlatformIcon(platform: string): string {
 
     // Enterprise Communication
     'microsoft-teams': 'MessageSquare',
+
+    // MCP (Model Context Protocol) Servers
+    tavily: 'Search',
+    brave: 'Search',
+    postgres_connection: 'Database',
+    github_token: 'Github',
+    slack_bot: 'MessageCircle',
+    google_oauth: 'FolderOpen',
   };
 
   return icons[platform] || 'Key';

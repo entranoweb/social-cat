@@ -114,9 +114,13 @@ const getDefaultQueueOptions = (): QueueOptions => ({
 });
 
 // Default worker options
+// Reduced from 50 to 25 to prevent DB connection pool exhaustion
+// and better match DB pool size (default 20-30)
+const WORKER_CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY || '25', 10);
+
 const defaultWorkerOptions: Omit<WorkerOptions, 'connection'> = {
   autorun: false,              // Start workers manually
-  concurrency: 50,             // Process 50 jobs concurrently (optimized for I/O-bound workflows)
+  concurrency: WORKER_CONCURRENCY, // Reduced from 50 to 25 to match DB pool capacity
   limiter: {
     max: 600,                  // Max 600 jobs per minute (10/sec rate limit)
     duration: 60000,           // Per minute (rate limiting)
@@ -125,10 +129,10 @@ const defaultWorkerOptions: Omit<WorkerOptions, 'connection'> = {
 
 // Log queue configuration on startup
 logger.info({
-  concurrency: 50,
+  concurrency: WORKER_CONCURRENCY,
   maxJobsPerMinute: 600,
-  optimization: 'WORKER_CONCURRENCY'
-}, '✅ BullMQ default worker config: 50 concurrent jobs, 600/min rate limit');
+  optimization: 'WORKER_CONCURRENCY_BALANCED'
+}, `✅ BullMQ default worker config: ${WORKER_CONCURRENCY} concurrent jobs, 600/min rate limit`);
 
 /**
  * Queue Registry

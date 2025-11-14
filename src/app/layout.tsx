@@ -5,6 +5,7 @@ import { SessionProvider } from "@/components/providers/SessionProvider";
 import { ClientProvider } from "@/components/providers/ClientProvider";
 import { Toaster } from "@/components/ui/sonner";
 import { AppLoader } from "@/components/ui/app-loader";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Force dynamic rendering for all pages
 export const dynamic = 'force-dynamic';
@@ -46,11 +47,13 @@ export default function RootLayout({
         className={`${interHeading.variable} ${interBody.variable} ${inter.variable} antialiased`}
       >
         <AppLoader />
-        <SessionProvider>
-          <ClientProvider>
-            {children}
-          </ClientProvider>
-        </SessionProvider>
+        <ErrorBoundary>
+          <SessionProvider>
+            <ClientProvider>
+              {children}
+            </ClientProvider>
+          </SessionProvider>
+        </ErrorBoundary>
         <Toaster />
       </body>
     </html>

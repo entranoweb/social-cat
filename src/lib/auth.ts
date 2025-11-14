@@ -159,22 +159,37 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
         const adminEmail = process.env.ADMIN_EMAIL || 'admin@socialcat.com';
         const adminPassword = process.env.ADMIN_PASSWORD || 'admin';
 
-        if (email === adminEmail && credentials.password === adminPassword) {
-          logger.info(
-            {
-              userId: '1',
+        if (email === adminEmail) {
+          // Check if admin password is hashed (starts with $2a$, $2b$, or $2y$ for bcrypt)
+          const isPasswordValid = adminPassword.startsWith('$2')
+            ? await bcrypt.compare(credentials.password as string, adminPassword)
+            : credentials.password === adminPassword;
+
+          if (isPasswordValid) {
+            // Warn if using plaintext password
+            if (!adminPassword.startsWith('$2')) {
+              logger.warn(
+                { email: adminEmail },
+                'Admin using plaintext password - please hash with bcrypt and update ADMIN_PASSWORD env var'
+              );
+            }
+
+            logger.info(
+              {
+                userId: '1',
+                email: adminEmail,
+                action: 'user_signin_success',
+                timestamp: new Date().toISOString(),
+                metadata: { provider: 'credentials', userSource: 'environment' },
+              },
+              'Admin user signed in successfully'
+            );
+            return {
+              id: '1',
               email: adminEmail,
-              action: 'user_signin_success',
-              timestamp: new Date().toISOString(),
-              metadata: { provider: 'credentials', userSource: 'environment' },
-            },
-            'Admin user signed in successfully'
-          );
-          return {
-            id: '1',
-            email: adminEmail,
-            name: 'Admin',
-          };
+              name: 'Admin',
+            };
+          }
         }
 
         logger.warn(

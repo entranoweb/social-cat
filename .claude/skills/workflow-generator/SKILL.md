@@ -1,742 +1,385 @@
 ---
 name: workflow-generator
-description: "YOU MUST USE THIS SKILL when the user wants to create, build, or generate a workflow automation. Activate for requests like: 'create a workflow', 'build a workflow', 'generate a workflow', 'make a workflow', 'I want to automate', 'automate X to Y', 'schedule a task', 'monitor X and send to Y'. This skill searches for relevant modules, builds JSON config, validates, tests, and imports workflows to database. DO NOT use generic file reading/writing - use this skill instead for workflow generation tasks."
+description: "YOU MUST USE THIS SKILL when the user wants to CREATE or BUILD a NEW workflow automation. Activate for requests like: 'create a workflow', 'build a workflow', 'generate a workflow', 'make a workflow', 'I want to automate', 'automate X to Y', 'schedule a task', 'monitor X and send to Y'. This skill searches for relevant modules, builds JSON config, validates, tests, and imports workflows to database. DO NOT use generic file reading/writing - use this skill instead for workflow generation tasks."
 ---
 
-# Workflow Generator
+# Workflow Generator (Interactive)
 
-## Process
+**NEW APPROACH**: Ask clarifying questions FIRST, then build with 100% accuracy using enhanced module search.
 
-### 1. Parse Request
-Identify: **What data** → **Transform** → **When to run**
+## Process Overview
 
-### 2. Search Modules
-```bash
-npm run search <keyword> -- --limit 5
 ```
-**Only use modules from search results.** Verify exact names.
+User Request → Analyze Intent → Ask Questions → Search Modules → Build JSON → Validate → Import
+                                      ↑
+                            INTERACTIVE CLARIFICATION
+                            (Eliminates ambiguity)
+```
 
-**For JSON output (machine-readable):**
+---
+
+## STEP 1: ANALYZE REQUEST & ASK QUESTIONS
+
+**ALWAYS start by asking clarifying questions using the AskUserQuestion tool.**
+
+### What to Ask vs What Frontend Handles
+
+**✅ ASK ABOUT (affects workflow logic):**
+- Trigger TYPE (cron, manual, webhook, chat)
+- Deduplication (yes/no)
+- AI model (GPT-4o-mini, Claude, etc.)
+- Content generation method (AI vs template)
+- Output format (table, JSON, text)
+- Data operations needed (filter, transform, etc.)
+
+**❌ DON'T ASK (frontend configures):**
+- Cron schedule frequency (hourly, daily, etc.) - UI dropdown
+- Telegram/Discord bot tokens - Settings dialog
+- Gmail/Outlook filters - Settings dialog
+- Webhook URLs - Generated after import
+- API rate limits - Handled by modules
+- Specific search keywords - Can be placeholder, user edits later
+
+**Why this split?**
+- Workflow JSON = LOGIC (what steps, which modules)
+- Frontend UI = RUNTIME (when to run, which accounts, filters)
+- Users can change runtime settings anytime without regenerating workflow
+
+### Detect Workflow Type
+
+Analyze the user's request to determine workflow type:
+
+- **Social Media** - Keywords: twitter, reddit, linkedin, reply, post, comment
+- **AI Generation** - Keywords: generate, write, create content, summarize
+- **Data Processing** - Keywords: transform, filter, parse, analyze
+- **API Integration** - Keywords: fetch, sync, pull data, webhook
+- **Email/Communication** - Keywords: email, slack, send message, notify
+- **Scheduled Monitoring** - Keywords: check, monitor, watch, track
+
+### Question Templates by Type
+
+#### **Social Media Workflows**
+Ask 2-3 questions:
+1. **Trigger type** (NOT schedule details - frontend handles that)
+2. **Deduplication** (always ask)
+3. **Content generation method**
+
+```typescript
+AskUserQuestion({
+  questions: [
+    {
+      question: "How should this workflow be triggered?",
+      header: "Trigger",
+      multiSelect: false,
+      options: [
+        { label: "Scheduled", description: "Run automatically on a schedule (user sets frequency in UI) ⭐" },
+        { label: "Manual", description: "Run on-demand when user clicks Run button" },
+        { label: "Webhook", description: "Triggered by external HTTP requests" }
+      ]
+    },
+    {
+      question: "Should we track and avoid duplicate replies?",
+      header: "Deduplication",
+      multiSelect: false,
+      options: [
+        { label: "Yes", description: "Store replied IDs in database - Prevents spam ⭐ Recommended" },
+        { label: "No", description: "Reply to all matches every time - May create duplicates" }
+      ]
+    },
+    {
+      question: "How should replies be generated?",
+      header: "Generation",
+      multiSelect: false,
+      options: [
+        { label: "AI-powered", description: "GPT generates personalized replies ⭐ Recommended" },
+        { label: "Fixed template", description: "Use same message every time" }
+      ]
+    }
+  ]
+})
+```
+
+**IMPORTANT**:
+- Scheduled workflows use `{"type": "cron", "config": {}}` - empty config!
+- User sets actual schedule (hourly, daily, etc.) via frontend UI dropdown
+- Do NOT hardcode cron expressions in JSON
+
+#### **AI Content Generation Workflows**
+Ask 2-3 questions:
+1. **AI Model** (if not specified)
+2. **Temperature** (if not specified)
+3. **Output format**
+
+```typescript
+AskUserQuestion({
+  questions: [
+    {
+      question: "Which AI model should generate the content?",
+      header: "AI Model",
+      multiSelect: false,
+      options: [
+        { label: "GPT-4o-mini", description: "Fast, cheap, good quality - Best for most use cases ⭐" },
+        { label: "Claude Haiku", description: "Fast Anthropic model - Good alternative" },
+        { label: "GPT-4o", description: "Most capable, higher cost - For complex tasks" },
+        { label: "Claude Sonnet", description: "Best quality, highest cost - Premium option" }
+      ]
+    },
+    {
+      question: "How creative should the AI be?",
+      header: "Creativity",
+      multiSelect: false,
+      options: [
+        { label: "Balanced", description: "Temperature 0.7 - Good mix of consistency and variety ⭐" },
+        { label: "Focused", description: "Temperature 0.3 - Consistent, factual, deterministic" },
+        { label: "Creative", description: "Temperature 1.2 - More varied and creative outputs" }
+      ]
+    }
+  ]
+})
+```
+
+#### **Data Processing Workflows**
+Ask 1-2 questions:
+1. **Output format**
+2. **Data source** (if ambiguous)
+
+```typescript
+AskUserQuestion({
+  questions: [
+    {
+      question: "How should the results be displayed?",
+      header: "Output",
+      multiSelect: false,
+      options: [
+        { label: "Table", description: "Structured data with columns - Best for lists ⭐" },
+        { label: "JSON", description: "Raw data format - Best for further processing" },
+        { label: "Text", description: "Plain text summary - Best for single values" }
+      ]
+    },
+    {
+      question: "What operations are needed?",
+      header: "Operations",
+      multiSelect: true,
+      options: [
+        { label: "Filter data", description: "Remove unwanted items based on conditions" },
+        { label: "Transform fields", description: "Change data structure or values" },
+        { label: "Sort/group", description: "Organize data by specific fields" },
+        { label: "Aggregate", description: "Calculate totals, averages, counts" }
+      ]
+    }
+  ]
+})
+```
+
+#### **Generic Workflow** (unclear type)
+Ask foundational questions to understand intent:
+
+```typescript
+AskUserQuestion({
+  questions: [
+    {
+      question: "When should this workflow run?",
+      header: "Trigger",
+      multiSelect: false,
+      options: [
+        { label: "Scheduled", description: "Automatic on a schedule (set frequency in UI after import) ⭐" },
+        { label: "Manual", description: "On-demand when you click Run" },
+        { label: "Webhook", description: "External HTTP trigger" },
+        { label: "Chat", description: "Conversational with AI responses" }
+      ]
+    },
+    {
+      question: "What type of output will this workflow produce?",
+      header: "Output",
+      multiSelect: false,
+      options: [
+        { label: "List of items", description: "Multiple records - Display as table ⭐" },
+        { label: "Single value", description: "One result - Display as text/JSON" },
+        { label: "AI response", description: "Chat/conversational output" }
+      ]
+    },
+    {
+      question: "Does this workflow need to store data between runs?",
+      header: "Persistence",
+      multiSelect: false,
+      options: [
+        { label: "Yes", description: "Track processed items, avoid duplicates ⭐ Recommended for monitoring" },
+        { label: "No", description: "Process everything fresh each time" }
+      ]
+    }
+  ]
+})
+```
+
+---
+
+## STEP 2: SEARCH MODULES WITH FULL DETAILS
+
+After getting user's answers, search for modules:
+
 ```bash
 npm run search <keyword> -- --format json --limit 5
 ```
 
-**CRITICAL: Verify file exists before using:**
-```bash
-# If search shows: devtools.github.getTrendingRepositories
-# Check: ls src/modules/devtools/ | grep github
-# If file is "github.ts", module path is correct
-```
+**Search returns enhanced details:**
+- Full parameter schemas
+- Required vs optional params
+- Wrapper type (params/options/direct)
+- Example inputs
+- Related modules
 
-**Module Parameter Detection:**
-Check the function signature in search results to determine wrapper type:
-- **AI SDK** (`ai.ai-sdk.*`) → ALWAYS use `{ "options": { ... } }`
-- Signature shows `(params: ...)` → Wrap with `{ "params": { ... } }`
-- Signature shows `(options: ...)` → Wrap with `{ "options": { ... } }`
-- Signature shows `(arg1, arg2)` → Direct: `{ "arg1": ..., "arg2": ... }`
-- Destructured `({ field1, field2 })` → Direct: `{ "field1": ..., "field2": ... }`
+**Use the templateInputs from search results - no guessing!**
 
-**Quick Reference:**
-- AI SDK → options
-- Database (drizzle-utils) → params
-- String utils → direct
-- Twitter OAuth → params
-- Slack → options
+---
 
-### 3. Build JSON
+## STEP 3: BUILD WORKFLOW JSON
 
-**Pre-flight:**
-- Check what API returns (Grep source if needed)
-- Keep simple (no unnecessary steps)
-- Verify every module exists
-- Check signature for parameter wrapper type
+Combine:
+- User's answers from questions
+- Module details from search
+- Storage pattern (if deduplication = Yes)
+- AI config (if AI model selected)
 
-**Complete Structure:**
-```json
-{
-  "version": "1.0",
-  "name": "Workflow Name",
-  "description": "What it does",
+**Key Mappings from User Answers:**
 
-  "trigger": {
-    "type": "manual|chat|cron|webhook|chat-input",
-    "config": {
-      // Placement: trigger configuration
-    }
-  },
+**Trigger Answer → Trigger Config:**
+- "Scheduled" → `{"type": "cron", "config": {}}` (user sets schedule in UI after import)
+- "Manual" → `{"type": "manual", "config": {}}`
+- "Webhook" → `{"type": "webhook", "config": {}}`
+- "Chat" → `{"type": "chat", "config": {}}`
 
-  "config": {
-    "steps": [
-      {
-        "id": "stepId",
-        "module": "category.module.function",
-        "inputs": {
-          // Placement: step parameters
-        },
-        "outputAs": "varName"
-      }
-    ],
-    "returnValue": "{{varName}}",   // Placement: config level
-    "outputDisplay": {               // Placement: config level
-      "type": "table|list|text|markdown|json",
-      "columns": []
-    }
-  },
+**IMPORTANT**: Leave trigger config empty! Frontend handles:
+- Cron schedules (via dropdown: hourly, daily, etc.)
+- Bot tokens (Telegram, Discord)
+- Email filters (Gmail, Outlook)
+- Webhook URLs
+Users configure these AFTER import via Settings dialog.
 
-  "metadata": {
-    "requiresCredentials": ["service"]
-  }
-}
-```
+**Deduplication Answer → Storage Steps:**
+- "Yes" → Add queryWhereIn, filter, insertRecord steps
+- "No" → Skip storage steps
 
-### 4. Validate & Import
+**AI Model Answer → Model Config:**
+- "GPT-4o-mini" → `{"model": "gpt-4o-mini", "provider": "openai"}`
+- "Claude Haiku" → `{"model": "claude-haiku-4-5-20251001", "provider": "anthropic"}`
+- "GPT-4o" → `{"model": "gpt-4o", "provider": "openai"}`
+- "Claude Sonnet" → `{"model": "claude-sonnet-4-5-20250929", "provider": "anthropic"}`
 
-**REQUIRED STEPS - Run in order:**
+**Temperature Answer → Temperature Value:**
+- "Balanced" → `0.7`
+- "Focused" → `0.3`
+- "Creative" → `1.2`
+
+**Output Type Answer → outputDisplay:**
+- "Table" → `{"type": "table", "columns": [...]}`
+- "JSON" → `{"type": "json"}`
+- "Text" → `{"type": "text"}`
+
+---
+
+## STEP 4: VALIDATE & AUTO-FIX
 
 ```bash
-# 1. Auto-fix common issues (fixes 90% of errors automatically)
+# 1. Auto-fix common issues
 npx tsx scripts/auto-fix-workflow.ts workflow/{name}.json --write
 
-# 2. Validate structure, modules, and output display (NEW: comprehensive validation with AJV)
+# 2. Validate
 npm run validate workflow/{name}.json
 
-# 3. Test execution (optional: add --dry-run for structure preview only)
-npx tsx scripts/test-workflow.ts workflow/{name}.json
+# 3. If errors, analyze and fix
+# (Most errors should be prevented by questions + search)
+```
 
-# 4. If errors occur, fix them with JSON Patch (NEW: incremental updates)
-npm run patch workflow/{name}.json fix-patch.json --write
+---
 
-# 5. Import to database
+## STEP 5: IMPORT TO DATABASE
+
+```bash
 npx tsx scripts/import-workflow.ts workflow/{name}.json
 ```
 
-**Auto-fix handles:**
-- AI SDK options wrapper
-- AI SDK .content references
-- AI SDK min token requirements (≥16)
-- zipToObjects string→array conversion
-- Module path case normalization
-- Variable name typos
-- returnValue placement
+Tell user: "✅ Workflow created and imported! View at: http://localhost:3000/dashboard/workflows"
 
-**What to do when validation fails:**
-- **"Module not found"** → Re-search modules: `npm run search <keyword> -- --limit 5`
-- **"Function not found"** → Run `npm run generate:registry` to sync
-- **"Variable undefined"** → Check `outputAs` in previous steps (NEW: validation shows suggestions)
-- **"Type mismatch"** → Check function signature and return type
-- **"Credential error"** → Check existing workflows for exact credential name
+---
 
-**NEW: Validation now provides detailed, actionable error messages with suggestions!**
+## Common Patterns Library
 
-## ⚠️ Critical Requirements (Common Mistakes)
+### Pattern: Social Media Deduplication
 
-**These are the most common errors. Follow these rules to avoid validation failures:**
+**When**: User wants to reply/comment without duplicates
+**Questions**: Schedule, Deduplication (Yes)
+**Steps**:
+1. Search/fetch items
+2. Extract IDs (pluck)
+3. Check storage (queryWhereIn)
+4. Filter new items
+5. Process new items
+6. Store IDs (insertRecord with TTL)
 
-1. **returnValue and outputDisplay placement:**
-   - ✅ **MUST be at `config` level** (NOT inside outputDisplay)
-   - ❌ WRONG: `"outputDisplay": { "returnValue": "..." }`
-   - ✅ CORRECT: `"config": { "returnValue": "...", "outputDisplay": {...} }`
+### Pattern: AI Content Generation
 
-2. **AI SDK requirements:**
-   - ✅ **ALWAYS** use `{ "options": { ... } }` wrapper for ALL AI SDK functions
-   - ✅ **maxTokens MUST be ≥16** (recommend 20+) for OpenAI
-   - ✅ AI outputs are objects, use `.content` for text: `{{aiOutput.content}}`
-   - ❌ WRONG: `"inputs": { "prompt": "..." }`
-   - ✅ CORRECT: `"inputs": { "options": { "prompt": "..." } }`
+**When**: User wants AI-generated content
+**Questions**: AI Model, Temperature, Output format
+**Steps**:
+1. Prepare input data
+2. Generate with AI (ai-sdk.generateText)
+3. Extract content (.content)
+4. Return formatted output
 
-3. **zipToObjects requirements:**
-   - ✅ **ALL fields MUST be arrays** of equal length
-   - ❌ WRONG: `"fields": "{{text}}"` (creates character array)
-   - ✅ CORRECT: `"fields": ["{{item1}}", "{{item2}}"]`
+### Pattern: Scheduled Data Sync
 
-4. **chat-input trigger requirements:**
-   - ✅ **fields array is REQUIRED** with at least one field
-   - ✅ Each field MUST have: `id`, `label`, `key`, `type`, `required`
-   - ✅ Valid types: `text`, `textarea`, `number`, `date`, `select`, `checkbox`
+**When**: User wants to sync data on schedule
+**Questions**: Schedule, Output format
+**Steps**:
+1. Fetch from source API
+2. Transform data
+3. Return or store
 
-5. **Variable references:**
-   - ✅ Use `{{outputAs}}` NOT `{{stepId.outputAs}}`
-   - ✅ Declare variable with `outputAs` before using it in later steps
+---
 
-## Placement Examples
+## Critical Rules (Keep Minimal)
 
-### Trigger Configurations
+1. **ALWAYS ask questions first** - Don't assume user's intent
+2. **Use search results** - Module details include exact parameters
+3. **Trust the templates** - Search returns ready-to-use JSON
+4. **Storage requires params wrapper** - All drizzle-utils functions
+5. **AI SDK requires options wrapper** - All ai.ai-sdk functions
+6. **Validate before import** - Catch errors early
 
-**Trigger Configuration Rules:**
-- **Cron**: Leave config empty `{}` - user configures schedule via UI dropdown
-- **Manual, Chat, Webhook**: Leave config empty `{}`
-- **Telegram, Discord, Gmail, Outlook**: Can be empty `{}` - user configures via UI (optional default values)
-- **Chat-input**: MUST include `fields` array - this is the form structure
+---
 
-**Manual (no config):**
-```json
-"trigger": {
-  "type": "manual",
-  "config": {}
-}
-```
+## Example: Full Interactive Session
 
-**Chat (conversational - auto-returns AI response):**
-```json
-"trigger": {
-  "type": "chat",
-  "config": {}
-}
-```
+**User**: "I want to reply to tweets about AI automation"
 
-**Cron (scheduled - user sets schedule via UI):**
-```json
-"trigger": {
-  "type": "cron",
-  "config": {}
-}
-```
-**Important:** Do NOT hardcode schedule. User selects from presets (every 5min, hourly, daily, etc.) via UI after import.
+**LLM Action 1**: Analyze → Detected type: Social Media
+**LLM Action 2**: Ask questions (Schedule, Deduplication, AI model)
+**User selects**: "Every hour", "Yes (dedup)", "GPT-4o-mini"
 
-**Webhook (no config):**
-```json
-"trigger": {
-  "type": "webhook",
-  "config": {}
-}
-```
-
-**Telegram/Discord/Gmail/Outlook (optional - user configures via UI):**
-```json
-"trigger": {
-  "type": "telegram",  // or discord, gmail, outlook
-  "config": {}
-}
-```
-**Note:** Bot tokens, commands, and filters are set by user via UI. Leave empty unless providing sensible defaults.
-
-**Chat Input (form with fields - REQUIRED):**
-```json
-"trigger": {
-  "type": "chat-input",
-  "config": {
-    "fields": [
-      {
-        "id": "1",
-        "label": "Field Label",
-        "key": "fieldName",
-        "type": "text",
-        "required": true,
-        "placeholder": "Enter value..."
-      }
-    ]
-  }
-}
-```
-**IMPORTANT:** `chat-input` requires a `fields` array with at least one field. Each field must have: `id`, `label`, `key`, `type`, `required`. Valid types: `text`, `textarea`, `number`, `date`, `select`, `checkbox`. Access field values using `{{trigger.fieldName}}` where `fieldName` is the field's `key`.
-
-### Step Input Formats
-
-**Direct parameters:**
-```json
-"inputs": {
-  "param1": "value",
-  "param2": 123
-}
-```
-
-**Params wrapper:**
-```json
-"inputs": {
-  "params": {
-    "param1": "value",
-    "param2": 123
-  }
-}
-```
-
-**Options wrapper (AI SDK always uses this):**
-```json
-"inputs": {
-  "options": {
-    "param1": "value",
-    "param2": 123
-  }
-}
-```
-
-**JavaScript execute (code + context):**
-```json
-"inputs": {
-  "options": {
-    "code": "return data.filter(x => x.id > 5);",
-    "context": {
-      "data": "{{varName}}"
-    }
-  }
-}
-```
-
-### Variable References
-
-**Step output:**
-```json
-"text": "{{varName}}"           // From outputAs
-```
-
-**Trigger input:**
-```json
-"text": "{{trigger.userMessage}}"   // From trigger config
-```
-
-**Nested property:**
-```json
-"text": "{{aiOutput.content}}"      // AI SDK responses
-"name": "{{repos[0].name}}"         // Array indexing
-"title": "{{data.items[0].title}}"  // Nested + array
-```
-
-**Inline interpolation:**
-```json
-"message": "Found {{count}} results for {{query}}"  // String templates
-```
-
-**Special variables:**
-```json
-"timestamp": "{{$now}}"             // Current time
-```
-
-### Credentials
-
-**Three ways to access credentials:**
-```json
-// 1. Explicit (recommended)
-"apiKey": "{{credential.openai_api_key}}"
-
-// 2. Legacy syntax
-"apiKey": "{{user.openai}}"
-
-// 3. Convenience (may conflict with step IDs)
-"apiKey": "{{openai}}"
-```
-
-**In step inputs:**
-```json
-"inputs": {
-  "params": {
-    "apiKey": "{{credential.service_api_key}}"
-  }
-}
-```
-
-**In metadata:**
-```json
-"metadata": {
-  "requiresCredentials": ["service1", "service2"]
-}
-```
-
-**Common credential names:**
-
-| Service | Credential Name | Parameter | Usage Pattern |
-|---------|----------------|-----------|---------------|
-| OpenAI | `openai_api_key` or `openai` | `apiKey` | `"apiKey": "{{credential.openai_api_key}}"` |
-| Twitter | `twitter_oauth` | `accessToken` | `"accessToken": "{{credential.twitter_oauth}}"` |
-| RapidAPI | `rapidapi_api_key` or `rapidapi` | `apiKey` | `"apiKey": "{{credential.rapidapi_api_key}}"` |
-| Slack | `slack` | `token` | Usually from environment |
-| Google | `google` | varies | Google OAuth credentials |
-
-**Check existing workflows for exact names:**
+**LLM Action 3**: Search modules
 ```bash
-grep -h "credential\." workflow/*.json | sort | uniq
+npm run search "twitter search" -- --format json --limit 3
+npm run search "twitter reply" -- --format json --limit 3
+npm run search "drizzle storage" -- --format json --limit 3
 ```
 
-**OAuth vs API Key patterns:**
-- OAuth services (Twitter): Pass `accessToken` parameter (tokens auto-refresh)
-- API key services (OpenAI, RapidAPI): Pass `apiKey` parameter
+**LLM Action 4**: Build JSON with:
+- Cron trigger (hourly)
+- Storage pattern (queryWhereIn + insertRecord)
+- AI generation (GPT-4o-mini, temp 0.7)
+- Exact parameters from search results
 
-### Output Display
+**LLM Action 5**: Validate & import
+**Output**: "✅ Workflow 'Reply to AI Tweets' created! Running hourly with deduplication."
 
-**Table (at config level):**
-```json
-"config": {
-  "steps": [...],
-  "returnValue": "{{tableData}}",
-  "outputDisplay": {
-    "type": "table",
-    "columns": [
-      { "key": "fieldName", "label": "Display Name", "type": "text" },
-      { "key": "url", "label": "Link", "type": "link" }
-    ]
-  }
-}
-```
+---
 
-**Text (at config level):**
-```json
-"config": {
-  "steps": [...],
-  "returnValue": "{{textOutput}}",
-  "outputDisplay": {
-    "type": "text"
-  }
-}
-```
+## Advantages Over workflow-builder
 
-**List (at config level):**
-```json
-"config": {
-  "steps": [...],
-  "returnValue": "{{arrayOutput}}",
-  "outputDisplay": {
-    "type": "list"
-  }
-}
-```
+✅ **No ambiguity** - Questions eliminate guessing
+✅ **Better UX** - Users make informed choices
+✅ **Fewer errors** - Clarification prevents mistakes
+✅ **Faster** - Less back-and-forth fixing issues
+✅ **Scalable** - Works for any workflow complexity
 
-**No display (return raw):**
-```json
-"config": {
-  "steps": [...],
-  "returnValue": "{{data}}"
-  // No outputDisplay
-}
-```
-
-### AI SDK
-
-**generateText:**
-```json
-{
-  "module": "ai.ai-sdk.generateText",
-  "inputs": {
-    "options": {
-      "prompt": "Your prompt here",
-      "model": "gpt-4o-mini",
-      "provider": "openai"
-    }
-  },
-  "outputAs": "aiResult"
-}
-// Access text: "{{aiResult.content}}"
-```
-
-**chat:**
-```json
-{
-  "module": "ai.ai-sdk.chat",
-  "inputs": {
-    "options": {
-      "messages": [
-        { "role": "system", "content": "System prompt" },
-        { "role": "user", "content": "{{trigger.userMessage}}" }
-      ],
-      "model": "gpt-4o-mini",
-      "provider": "openai"
-    }
-  }
-}
-```
-
-## Key Rules
-
-**Variables:**
-- Use: `{{outputAs}}` not `{{stepId.outputAs}}`
-- Trigger: `{{trigger.inputVariable}}`
-- Nested: `{{var.property}}`
-
-**Parameters:**
-- Check search results for signature
-- `(params: ...)` → wrap with `"params"`
-- `(options: ...)` → wrap with `"options"`
-- Direct destructuring → no wrapper
-
-**AI SDK:**
-- Always: `"inputs": { "options": { ... } }`
-- Text access: `"{{aiOutput.content}}"`
-
-**Credentials:**
-- Format: `"{{credential.service_api_key}}"`
-- Check existing workflows for exact names
-- List in: `"metadata": { "requiresCredentials": [...] }`
-
-**Output:**
-- `returnValue` at `config` level
-- `outputDisplay` at `config` level
-- Table requires `columns` array
-
-## Common Errors & Solutions
-
-### Module Errors
-
-**"Module 'x.y.z' not found in registry"**
-- Re-search modules with different keywords
-- Module path must be lowercase: `social.twitter` not `Social.Twitter`
-- Verify with: `npx tsx scripts/search-modules.ts "keyword"`
-
-**"Function not found in module"**
-- Registry may be out of sync with actual module files
-- Run: `npm run generate:registry` to regenerate registry
-- Registry is auto-generated from actual module files (not manually maintained)
-- When to regenerate:
-  - After adding new modules
-  - After renaming functions
-  - After pulling code changes
-  - If function exists but validation says it doesn't
-- Check module source: `cat src/modules/{category}/{module}.ts`
-
-### AI SDK Errors
-
-**"prompt is not defined" or "options is undefined"**
-- AI SDK ALWAYS needs options wrapper
-- ❌ WRONG: `"inputs": { "prompt": "..." }`
-- ✅ CORRECT: `"inputs": { "options": { "prompt": "..." } }`
-
-**"maxOutputTokens must be >= 16"**
-- OpenAI requires minimum 16 tokens
-- Auto-fix sets to 20 if too low
-- Manually set: `"maxTokens": 20` or higher
-
-**AI output used in string function fails**
-- AI returns objects, not strings
-- ❌ WRONG: `{{aiOutput}}` for text operations
-- ✅ CORRECT: `{{aiOutput.content}}` to extract text
-
-### Variable Errors
-
-**"Variable 'x' is undefined"**
-- Check variable declared in previous step with `outputAs`
-- Use `{{outputAs}}` NOT `{{stepId.outputAs}}`
-- Variables must be declared before use
-
-### Array/Data Errors
-
-**"All fields must be arrays of equal length" (zipToObjects)**
-- Don't pass strings like `"{{text}}"`
-- ❌ WRONG: `"fields": "{{text}}"` (creates char array)
-- ✅ CORRECT: `"fields": ["{{item1}}", "{{item2}}"]`
-
-### Credential Errors
-
-**"credential.X is undefined"**
-- Check existing workflows for exact credential name
-- Run: `grep "credential\." workflow/*.json`
-- Common names: `openai_api_key`, `twitter_oauth`, `rapidapi_api_key`
-- List in metadata: `"requiresCredentials": ["service"]`
-
-### Validation Errors
-
-**"returnValue must be at config level"**
-- ❌ WRONG: Inside `outputDisplay`
-- ✅ CORRECT: At same level as `steps` and `outputDisplay`
-
-**"chat-input fields required"**
-- Must have `fields` array with at least one field
-- Each field needs: `id`, `label`, `key`, `type`, `required`
-
-## Testing Strategy
-
-**Dry-run (structure check only):**
-```bash
-npx tsx scripts/test-workflow.ts workflow/{name}.json --dry-run
-```
-- Shows step flow and variable dependencies
-- No actual execution
-- Fast preview
-
-**Full test (actual execution):**
-```bash
-npx tsx scripts/test-workflow.ts workflow/{name}.json
-```
-- Temporary import to database
-- Real execution with actual API calls
-- Auto cleanup after test
-- Smart error analysis with fix suggestions
-
-**When to test:**
-1. After validation passes
-2. Before importing to production
-3. When credentials are configured
-4. To verify output format
-
-**Test output includes:**
-- Execution duration
-- Output compatibility check
-- Error category (credential/network/type/etc.)
-- Actionable fix suggestions
-
-## Advanced Features
-
-### Automatic Parallelization
-
-The executor automatically detects steps that can run in parallel:
-
-```json
-{
-  "steps": [
-    { "id": "fetch1", "module": "...", "outputAs": "data1" },
-    { "id": "fetch2", "module": "...", "outputAs": "data2" },  // Runs parallel with fetch1
-    { "id": "combine", "module": "...", "inputs": { "a": "{{data1}}", "b": "{{data2}}" } }  // Waits for both
-  ]
-}
-```
-
-- No configuration needed
-- 3x+ speedup for independent operations
-- Logged in execution logs
-
-### Control Flow (Advanced)
-
-**Condition Step:**
-```json
-{
-  "id": "checkStatus",
-  "type": "condition",
-  "condition": "{{status}} === 'active'",
-  "then": [...steps if true],
-  "else": [...steps if false]
-}
-```
-
-**ForEach Loop:**
-```json
-{
-  "id": "processItems",
-  "type": "forEach",
-  "items": "{{arrayVar}}",
-  "itemVariable": "item",
-  "steps": [
-    { "id": "process", "inputs": { "data": "{{item}}" } }
-  ]
-}
-```
-
-**While Loop:**
-```json
-{
-  "id": "retry",
-  "type": "while",
-  "condition": "{{attempts}} < 3",
-  "maxIterations": 100,
-  "steps": [...]
-}
-```
-
-### Database Operations
-
-**Tables auto-create from data structure:**
-- `string` → TEXT
-- `number` → INTEGER
-- `Date` → TIMESTAMP
-- No migrations needed
-
-```json
-{
-  "module": "data.drizzle-utils.insertRecord",
-  "inputs": {
-    "params": {
-      "tableName": "leads",
-      "data": {
-        "name": "{{name}}",
-        "email": "{{email}}",
-        "score": 95
-      }
-    }
-  }
-}
-```
-
-### OAuth Token Management
-
-Tokens auto-refresh for supported providers:
-- Twitter OAuth
-- YouTube
-- GitHub
-
-No manual token management needed. System handles expiration and refresh automatically.
-
-## Workflow Management
-
-### Updating Existing Workflows
-
-**When user wants to modify an existing workflow:**
-
-1. **Read the existing workflow:**
-   ```bash
-   cat workflow/{name}.json
-   ```
-
-2. **Make changes** to the JSON file
-
-3. **Follow validation pipeline:**
-   ```bash
-   npx tsx scripts/auto-fix-workflow.ts workflow/{name}.json --write
-   npx tsx scripts/validate-workflow.ts workflow/{name}.json
-   npx tsx scripts/test-workflow.ts workflow/{name}.json
-   ```
-
-4. **Re-import** (updates existing workflow by ID):
-   ```bash
-   npx tsx scripts/import-workflow.ts workflow/{name}.json
-   ```
-
-**Creating a new version:**
-- Change the `name` field in JSON
-- Import creates new workflow with new ID
-- Old workflow remains unchanged
-
-**Do NOT:**
-- Manually edit database records
-- Change workflow IDs in JSON
-- Import without testing
-
-### Rate Limiting
-
-**No built-in rate limiting in workflows.** Handle API rate limits:
-
-1. **Add delays between requests:**
-   ```json
-   {
-     "module": "utilities.delay.sleep",
-     "inputs": { "milliseconds": 1000 }
-   }
-   ```
-
-2. **Use batch processing** with ForEach loops:
-   ```json
-   {
-     "type": "forEach",
-     "items": "{{batch}}",
-     "maxConcurrency": 1  // Process one at a time
-   }
-   ```
-
-3. **Handle rate limit errors:**
-   - Test workflow to identify rate limits
-   - Add delays between expensive operations
-   - User should configure API keys with higher limits if needed
-
-4. **For production workflows:**
-   - Suggest user schedules workflows with reasonable frequency
-   - Avoid scheduling expensive workflows more than hourly
-
-## Module Categories
-
-16 categories with 140+ services:
-- **ai** - Claude, GPT, Gemini, AI SDK
-- **business** - CRM, analytics
-- **communication** - Slack, email, SMS
-- **content** - RSS, scraping, parsing
-- **data** - Database, file operations
-- **dataprocessing** - Transform, filter, aggregate
-- **devtools** - GitHub, APIs, testing
-- **ecommerce** - Payments, products
-- **external-apis** - RapidAPI, third-party
-- **leads** - Lead generation, enrichment
-- **payments** - Stripe, payment processing
-- **productivity** - Calendar, tasks
-- **social** - Twitter, Reddit, LinkedIn
-- **utilities** - String, array, validation
-- **video** - YouTube, video processing
-
-**Category folder mapping:**
-- "Social Media" → `social`
-- "Developer Tools" → `devtools`
-- "AI & ML" → `ai`
-
-See `examples.md` for complete working workflows.
+**Use this skill for reliable, production-ready workflow generation.**

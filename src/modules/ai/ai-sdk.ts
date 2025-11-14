@@ -85,13 +85,23 @@ export interface AIGenerateResponse {
  */
 function getModelInstance(provider: AIProvider, modelName: string, apiKey?: string) {
   if (provider === 'openai') {
+    if (!apiKey) {
+      throw new Error(
+        'OpenAI API key not found. Please add an OpenAI API key in the credentials page.'
+      );
+    }
     const openaiProvider = createOpenAI({
-      apiKey: apiKey || process.env.OPENAI_API_KEY,
+      apiKey: apiKey,
     });
     return openaiProvider(modelName);
   } else if (provider === 'anthropic') {
+    if (!apiKey) {
+      throw new Error(
+        'Anthropic API key not found. Please add an Anthropic API key in the credentials page.'
+      );
+    }
     const anthropicProvider = createAnthropic({
-      apiKey: apiKey || process.env.ANTHROPIC_API_KEY,
+      apiKey: apiKey,
     });
     return anthropicProvider(modelName);
   }

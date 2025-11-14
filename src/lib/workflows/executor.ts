@@ -107,9 +107,18 @@ export async function executeWorkflow(
     // Load user credentials
     const userCredentials = await loadUserCredentials(userId);
 
+    // DEBUG: Log credential keys
+    logger.info({
+      userId,
+      credentialKeys: Object.keys(userCredentials),
+      hasAnthropicKey: 'anthropic_api_key' in userCredentials,
+      hasOpenaiKey: 'openai_api_key' in userCredentials,
+    }, 'DEBUG: User credentials loaded for workflow execution');
+
     // Initialize execution context
     const context: ExecutionContext = {
       variables: {
+        workflowId, // Add workflowId for workflow-scoped storage
         user: {
           id: userId,
           ...userCredentials, // e.g., { openai: "sk-...", stripe: "sk_test_..." }
@@ -149,7 +158,7 @@ export async function executeWorkflow(
           return await executeStep(
             step,
             ctx,
-            executeModuleFunction,
+            (modulePath, inputs) => executeModuleFunction(modulePath, inputs, ctx),
             resolveVariables
           );
         }
@@ -318,7 +327,28 @@ function resolveValue(value: unknown, variables: Record<string, unknown>): unkno
     const match = value.match(/^{{(.+)}}$/);
     if (match) {
       const path = match[1];
-      return getNestedValue(variables, path);
+      const resolved = getNestedValue(variables, path);
+
+      // Debug logging for credential resolution
+      if (path.startsWith('credential.')) {
+        console.log('=== CREDENTIAL RESOLUTION DEBUG ===');
+        console.log('Path:', path);
+        console.log('Resolved value:', resolved ? `***VALUE_LENGTH_${String(resolved).length}***` : 'UNDEFINED');
+        console.log('Resolved is string?', typeof resolved === 'string');
+        console.log('variables.credential type:', typeof variables.credential);
+        console.log('variables.credential is object?', variables.credential && typeof variables.credential === 'object');
+        console.log('Available credential keys:', Object.keys(variables.credential || {}));
+        console.log('Specific key exists?', path.split('.')[1] in (variables.credential as Record<string, unknown> || {}));
+        console.log('===================================');
+
+        logger.info({
+          path,
+          resolved: resolved ? '***PRESENT***' : undefined,
+          availableCredentials: Object.keys(variables.credential || {}),
+        }, 'DEBUG: Resolving credential variable');
+      }
+
+      return resolved;
     }
 
     // Replace inline variables in strings
@@ -400,7 +430,8 @@ const CATEGORY_FOLDER_MAP: Record<string, string> = {
  */
 async function executeModuleFunction(
   modulePath: string,
-  inputs: Record<string, unknown>
+  inputs: Record<string, unknown>,
+  context?: ExecutionContext
 ): Promise<unknown> {
   logger.info({ modulePath, inputs }, 'Executing module function');
 
@@ -452,6 +483,41 @@ async function executeModuleFunction(
 
     let actualFunctionName = functionName;
     const actualInputs = { ...inputs };
+
+    // Auto-inject API key for AI modules
+    // Check if this is an AI module (ai.ai-agent.runAgent, ai.ai-sdk.generateText, etc.)
+    if (categoryName === 'ai' && inputs.options && typeof inputs.options === 'object' && context) {
+      const options = inputs.options as Record<string, unknown>;
+
+      // Only inject if apiKey is not already provided
+      if (!options.apiKey) {
+        const model = options.model as string | undefined;
+
+        // Detect provider from model name
+        let credentialKey: string | undefined;
+        if (model?.startsWith('gpt-')) {
+          credentialKey = 'openai_api_key';
+        } else if (model?.startsWith('claude-')) {
+          credentialKey = 'anthropic_api_key';
+        }
+
+        if (credentialKey && context.variables.credential) {
+          // Get the actual credential value from context
+          const credentialValue = (context.variables.credential as Record<string, unknown>)[credentialKey];
+
+          if (credentialValue) {
+            // Inject the actual credential value
+            (actualInputs.options as Record<string, unknown>).apiKey = credentialValue;
+
+            logger.info({
+              modulePath,
+              model,
+              credentialKey
+            }, 'Auto-injected AI API key from credentials');
+          }
+        }
+      }
+    }
 
     // If it's a read-only operation, try to use the API key version
     if (isReadOnly) {
@@ -834,6 +900,15 @@ async function loadUserCredentialsFromDB(userId: string): Promise<Record<string,
       }
     }
 
+    console.log('=== CREDENTIALS DEBUG ===');
+    console.log('User ID:', userId);
+    console.log('Credential keys:', Object.keys(credentialMap));
+    console.log('Credential map:', JSON.stringify(Object.keys(credentialMap).reduce((acc, key) => {
+      acc[key] = credentialMap[key] ? '***HAS_VALUE***' : 'MISSING';
+      return acc;
+    }, {} as Record<string, string>), null, 2));
+    console.log('=========================');
+
     logger.info(
       {
         userId,
@@ -885,11 +960,16 @@ export async function executeWorkflowConfig(
 
   const context: ExecutionContext = {
     variables: {
+      workflowId: 'inline', // Add workflowId for workflow-scoped storage
       user: {
         id: userId,
         ...userCredentials,
       },
+      credential: userCredentials, // Add credential namespace for {{credential.platform}} syntax
       trigger: triggerData || {},
+      // Also add credentials to top-level for convenience
+      // Allows {{user.youtube_apikey}}, {{credential.youtube_apikey}}, and {{youtube_apikey}} syntax
+      ...userCredentials,
     },
     workflowId: 'inline',
     runId,
@@ -918,7 +998,7 @@ export async function executeWorkflowConfig(
         return await executeStep(
           step,
           ctx,
-          executeModuleFunction,
+          (modulePath, inputs) => executeModuleFunction(modulePath, inputs, ctx),
           resolveVariables
         );
       }

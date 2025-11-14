@@ -31,6 +31,7 @@ export function ChatInterface({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [input, setInput] = useState('');
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>(initialConversationId);
 
   const toggleFullscreen = () => {
     const newFullscreen = !isFullscreen;
@@ -41,9 +42,18 @@ export function ChatInterface({
   const { messages, setMessages, sendMessage, status } = useChat({
     transport: new DefaultChatTransport({
       api: `/api/workflows/${workflowId}/chat`,
-      body: initialConversationId ? {
-        conversationId: initialConversationId,
-      } : undefined,
+      fetch: async (url, options) => {
+        const response = await fetch(url, options);
+
+        // Extract conversation ID from response headers
+        const newConversationId = response.headers.get('X-Conversation-Id');
+
+        if (newConversationId && !conversationId) {
+          setConversationId(newConversationId);
+        }
+
+        return response;
+      },
     }),
     messages: [
       {
@@ -98,7 +108,8 @@ export function ChatInterface({
           setIsLoadingHistory(false);
         });
     }
-  }, [initialConversationId, workflowId, workflowName, workflowDescription, isLoadingHistory, setMessages]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConversationId]);
 
   // Extract text content from message parts
   const getMessageText = (message: typeof messages[0]) => {
@@ -109,9 +120,11 @@ export function ChatInterface({
       .join('');
   };
 
-  // Only show loading if we're waiting for a response (no assistant message being streamed yet)
+  // Show loading indicator when waiting for response or when response just started (empty assistant message)
   const lastMessage = messages[messages.length - 1];
-  const isLoading = (status === 'submitted' || status === 'streaming') && (lastMessage?.role as string) === 'user';
+  const lastMessageText = lastMessage ? getMessageText(lastMessage) : '';
+  const isLoading = status === 'submitted' ||
+    (status === 'streaming' && (lastMessage?.role as string) === 'assistant' && lastMessageText.trim() === '');
 
   // Auto-focus input when component mounts
   useEffect(() => {
@@ -127,18 +140,24 @@ export function ChatInterface({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Maintain focus on input when messages change (streaming responses)
+  // Maintain focus on input when status changes (during streaming and after response completes)
   useEffect(() => {
-    if (status === 'streaming' && inputRef.current && document.activeElement !== inputRef.current) {
-      inputRef.current.focus();
+    if (inputRef.current && document.activeElement !== inputRef.current) {
+      // Re-focus during streaming and when returning to ready state (after response completes)
+      if (status === 'streaming' || status === 'ready') {
+        inputRef.current.focus();
+      }
     }
-  }, [messages, status]);
+  }, [status]);
 
   const handleFormSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!input || !input.trim()) return;
 
-    sendMessage({ text: input });
+    sendMessage(
+      { text: input },
+      conversationId ? { body: { conversationId } } : undefined
+    );
     setInput(''); // Clear input after sending
   };
 
@@ -170,7 +189,7 @@ export function ChatInterface({
       </div>
 
       {/* Messages Container */}
-      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
+      <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 scrollbar-none [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
         <AnimatePresence initial={false}>
           {messages.map((message, index) => (
             <motion.div

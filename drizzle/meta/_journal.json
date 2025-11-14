@@ -71,6 +71,13 @@
       "when": 1762971443366,
       "tag": "0009_add_chat_conversations",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1763050181045,
+      "tag": "0010_odd_sir_ram",
+      "breakpoints": true
     }
   ]
 }

@@ -47,6 +47,9 @@ interface ModuleInfo {
     name: string;
     required: boolean;
   }[];
+  wrapper?: 'params' | 'options' | null;  // NEW: How to wrap parameters
+  template?: Record<string, unknown>;      // NEW: Ready-to-use inputs template
+  tags?: string[];                         // NEW: Use case tags
 }
 
 /**
@@ -86,6 +89,108 @@ function parseSignature(signature: string): { name: string; required: boolean }[
 }
 
 /**
+ * Detect wrapper type from module path and signature
+ */
+function detectWrapperType(modulePath: string, signature: string): 'params' | 'options' | null {
+  // AI SDK always uses options
+  if (modulePath.startsWith('ai.ai-sdk.') || modulePath.startsWith('ai.ai-agent.')) {
+    return 'options';
+  }
+
+  // Drizzle utils uses params
+  if (modulePath.includes('drizzle-utils')) {
+    return 'params';
+  }
+
+  // Check signature for hints
+  if (signature.includes('(params:') || signature.includes('(params)')) {
+    return 'params';
+  }
+  if (signature.includes('(options:') || signature.includes('(options)')) {
+    return 'options';
+  }
+
+  // Direct parameters (no wrapper)
+  const paramMatch = signature.match(/\(([^)]+)\)/);
+  if (paramMatch) {
+    const paramStr = paramMatch[1].trim();
+    // If starts with { or has : without params/options keyword, it's direct
+    if (paramStr.startsWith('{') || (paramStr.includes(':') && !paramStr.includes('params') && !paramStr.includes('options'))) {
+      return null; // Direct parameters
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Generate minimal template for inputs
+ */
+function generateTemplate(modulePath: string, params: { name: string; required: boolean }[], wrapper: 'params' | 'options' | null): Record<string, unknown> {
+  const requiredParams = params.filter(p => p.required);
+
+  // Special case: AI SDK - Include ALL required fields
+  if (wrapper === 'options' && modulePath.startsWith('ai.ai-sdk.')) {
+    return {
+      options: {
+        prompt: "{{YOUR_PROMPT}}",
+        model: "gpt-4o-mini",
+        apiKey: "{{credential.openai_api_key}}"
+      }
+    };
+  }
+
+  // Special case: drizzle-utils storage
+  if (modulePath.includes('drizzle-utils.insertRecord')) {
+    return {
+      params: {
+        workflowId: "{{workflowId}}",
+        tableName: "YOUR_TABLE",
+        data: { field: "{{value}}" }
+      }
+    };
+  }
+
+  if (modulePath.includes('drizzle-utils.queryWhereIn')) {
+    return {
+      params: {
+        workflowId: "{{workflowId}}",
+        tableName: "YOUR_TABLE",
+        column: "id_field",
+        values: "{{arrayVar}}"
+      }
+    };
+  }
+
+  // Generic template
+  const paramObj: Record<string, string> = {};
+  requiredParams.forEach(p => {
+    paramObj[p.name] = `{{${p.name}}}`;
+  });
+
+  if (wrapper) {
+    return { [wrapper]: paramObj };
+  }
+  return paramObj;
+}
+
+/**
+ * Add tags for common use cases
+ */
+function generateTags(modulePath: string, description: string): string[] {
+  const tags: string[] = [];
+  const lower = `${modulePath} ${description}`.toLowerCase();
+
+  if (lower.includes('twitter') || lower.includes('reddit') || lower.includes('linkedin')) tags.push('social');
+  if (lower.includes('email') || lower.includes('slack') || lower.includes('discord')) tags.push('communication');
+  if (lower.includes('generatetext') || lower.includes('ai-sdk') || lower.includes('agent')) tags.push('ai');
+  if (lower.includes('storage') || lower.includes('database') || lower.includes('drizzle')) tags.push('storage');
+  if (lower.includes('transform') || lower.includes('filter') || lower.includes('array')) tags.push('data-processing');
+
+  return tags;
+}
+
+/**
  * Search modules and return results
  */
 function searchModules(): ModuleInfo[] {
@@ -113,11 +218,19 @@ function searchModules(): ModuleInfo[] {
           return;
         }
 
+        const params = parseSignature(fn.signature);
+        const wrapper = detectWrapperType(modulePath, fn.signature);
+        const template = generateTemplate(modulePath, params, wrapper);
+        const tags = generateTags(modulePath, fn.description);
+
         results.push({
           path: modulePath,
           description: fn.description,
           signature: fn.signature,
-          params: parseSignature(fn.signature)
+          params,
+          wrapper: wrapper || undefined,
+          template,
+          tags: tags.length > 0 ? tags : undefined
         });
       });
     });
@@ -141,12 +254,19 @@ function formatResults(results: ModuleInfo[]): void {
     return;
   }
 
-  // Compact text format for LLM context
+  // Compact text format for LLM context (ENHANCED)
   console.log(`Found ${results.length} module(s):\n`);
 
   results.forEach((result, index) => {
     console.log(`${index + 1}. ${result.path}`);
     console.log(`   ${result.description}`);
+
+    // Show wrapper type (CRITICAL for correctness)
+    if (result.wrapper) {
+      console.log(`   Wrapper: "${result.wrapper}" (use {"${result.wrapper}": {...}})`);
+    } else {
+      console.log(`   Wrapper: none (direct params)`);
+    }
 
     // Show parameters inline
     const requiredParams = result.params.filter(p => p.required).map(p => p.name);
@@ -158,11 +278,20 @@ function formatResults(results: ModuleInfo[]): void {
     if (optionalParams.length > 0) {
       console.log(`   Optional: ${optionalParams.join(', ')}`);
     }
+
+    // Show ready-to-use template (COMPACT - single line)
+    console.log(`   Template: ${JSON.stringify(result.template)}`);
+
+    // Show tags for context
+    if (result.tags && result.tags.length > 0) {
+      console.log(`   Tags: ${result.tags.join(', ')}`);
+    }
+
     console.log('');
   });
 
-  console.log(`💡 Use --format json for machine-readable output`);
-  console.log(`💡 Use --limit N to show more/fewer results (current: ${limitFlag})`);
+  console.log(`💡 Use --format json for full details`);
+  console.log(`💡 Use --limit N to control results (current: ${limitFlag})`);
 }
 
 /**

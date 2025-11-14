@@ -14,6 +14,9 @@
 
 // Language Models - Unified AI SDK (OpenAI + Anthropic)
 export * from './ai-sdk';
+export * from './ai-agent';
+export * from './ai-agent-stream';
+export * from './ai-tools';
 export * from './cohere';
 
 // Vector Databases

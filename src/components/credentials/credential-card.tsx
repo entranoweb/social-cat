@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import { PLATFORM_CONFIGS } from '@/lib/workflows/platform-configs';
+import { apiClient, APIError } from '@/lib/api-client';
 
 interface CredentialCardProps {
   credential: {
@@ -48,22 +49,16 @@ export function CredentialCard({ credential, onDeleted, onUpdated }: CredentialC
   const performDelete = async () => {
     setDeleting(true);
     try {
-      const response = await fetch(`/api/credentials/${credential.id}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete credential');
-      }
+      await apiClient.delete(`/api/credentials/${credential.id}`);
 
       toast.success('Credential deleted', {
         description: `"${credential.name}" has been removed.`,
       });
       onDeleted();
     } catch (error) {
-      console.error('Failed to delete credential:', error);
+      const message = error instanceof APIError ? error.message : 'Failed to delete credential';
       toast.error('Failed to delete credential', {
-        description: error instanceof Error ? error.message : 'Unknown error occurred',
+        description: message,
       });
     } finally {
       setDeleting(false);
@@ -106,23 +101,17 @@ export function CredentialCard({ credential, onDeleted, onUpdated }: CredentialC
         return;
       }
 
-      const response = await fetch(`/api/credentials/${credential.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to update credential');
-      }
+      await apiClient.patch(`/api/credentials/${credential.id}`, payload);
 
       toast.success('Credential updated');
       setEditDialogOpen(false);
       setEditFields({});
       onUpdated?.();
     } catch (error) {
-      console.error('Error updating credential:', error);
-      toast.error('Failed to update credential');
+      const message = error instanceof APIError ? error.message : 'Failed to update credential';
+      toast.error('Failed to update credential', {
+        description: message,
+      });
     } finally {
       setSaving(false);
     }

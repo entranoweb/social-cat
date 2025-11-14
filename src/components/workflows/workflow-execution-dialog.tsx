@@ -100,7 +100,8 @@ export function WorkflowExecutionDialog({
       setExecuting(false);
       toast.success('Workflow executed successfully');
       onExecuted?.();
-    } else if (progressState.status === 'failed') {
+    } else if (progressState.status === 'failed' && !hasShownToastRef.current) {
+      hasShownToastRef.current = true;
       const errorMessage = progressState.error || 'Workflow execution failed';
       setExecutionResult({
         id: 'failed',

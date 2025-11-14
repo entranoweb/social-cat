@@ -1419,6 +1419,111 @@ export const PLATFORM_CONFIGS: Record<string, PlatformConfig> = {
       { key: 'value', label: 'API Key / Token', type: 'password', required: true }
     ]
   },
+
+  // ============================================
+  // MCP (MODEL CONTEXT PROTOCOL) SERVERS
+  // ============================================
+  tavily: {
+    id: 'tavily',
+    name: 'Tavily Search',
+    category: 'MCP',
+    fields: [
+      {
+        key: 'api_key',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        placeholder: 'tvly-...',
+        description: 'Your Tavily API key from tavily.com'
+      }
+    ]
+  },
+
+  brave: {
+    id: 'brave',
+    name: 'Brave Search',
+    category: 'MCP',
+    fields: [
+      {
+        key: 'api_key',
+        label: 'API Key',
+        type: 'password',
+        required: true,
+        description: 'Your Brave Search API key from brave.com/search/api'
+      }
+    ]
+  },
+
+  postgres_connection: {
+    id: 'postgres_connection',
+    name: 'PostgreSQL Connection',
+    category: 'MCP',
+    fields: [
+      {
+        key: 'connection_string',
+        label: 'Connection String',
+        type: 'password',
+        required: true,
+        placeholder: 'postgresql://user:pass@host:5432/dbname',
+        description: 'PostgreSQL connection string'
+      }
+    ]
+  },
+
+  github_token: {
+    id: 'github_token',
+    name: 'GitHub Token (MCP)',
+    category: 'MCP',
+    fields: [
+      {
+        key: 'token',
+        label: 'Personal Access Token',
+        type: 'password',
+        required: true,
+        placeholder: 'ghp_...',
+        description: 'GitHub Personal Access Token with repo permissions'
+      }
+    ]
+  },
+
+  slack_bot: {
+    id: 'slack_bot',
+    name: 'Slack Bot',
+    category: 'MCP',
+    fields: [
+      {
+        key: 'bot_token',
+        label: 'Bot Token',
+        type: 'password',
+        required: true,
+        placeholder: 'xoxb-...',
+        description: 'Slack Bot User OAuth Token'
+      },
+      {
+        key: 'team_id',
+        label: 'Team ID',
+        type: 'text',
+        required: true,
+        placeholder: 'T0123456789',
+        description: 'Your Slack Team/Workspace ID'
+      }
+    ]
+  },
+
+  google_oauth: {
+    id: 'google_oauth',
+    name: 'Google OAuth',
+    category: 'MCP',
+    fields: [
+      {
+        key: 'oauth_token',
+        label: 'OAuth Token',
+        type: 'password',
+        required: true,
+        description: 'Google OAuth access token for Drive access'
+      }
+    ]
+  },
 };
 
 /**

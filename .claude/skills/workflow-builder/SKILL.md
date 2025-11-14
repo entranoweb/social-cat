@@ -1,11 +1,9 @@
 ---
 name: workflow-builder
-description: "YOU MUST USE THIS SKILL when the user wants to CREATE or BUILD a NEW workflow automation. Activate for requests like: 'create a workflow', 'build a workflow', 'generate a workflow', 'make a workflow', 'I want to automate', 'automate X to Y', 'schedule a task', 'monitor X and send to Y'. This skill focuses on workflow creation, module discovery, and JSON generation. For DEBUGGING or FIXING existing workflows, use the workflow-fixer skill instead."
+description: "YOU MUST USE THIS SKILL when the user wants to CREATE or BUILD a NEW workflow automation. Activate for requests like: 'create a workflow', 'build a workflow', 'generate a workflow', 'make a workflow', 'I want to automate', 'automate X to Y', 'schedule a task', 'monitor X and send to Y'. This skill focuses on workflow creation, module discovery, and JSON generation."
 ---
 
 # Workflow Builder
-
-**For debugging**: Use `/fix-workflow`
 
 ## BEFORE YOU START
 
@@ -153,7 +151,7 @@ npx tsx scripts/import-workflow.ts workflow/{name}.json
   ```
 - Re-run validation after fixes
 
-**If errors persist**: Use `/fix-workflow` for debugging.
+**If errors persist**: Review the auto-fix output and manually correct remaining issues.
 
 ---
 
@@ -276,6 +274,207 @@ Access: `{{trigger.message}}`, `{{trigger.chatId}}`, `{{trigger.userId}}`
 
 ---
 
+## AI Agents (Autonomous Tools)
+
+**When to use:** User wants AI to autonomously select and execute tools instead of manually defining each step.
+
+**Available agents:**
+- `ai.ai-agent.runAgent` - General (choose categories)
+- `ai.ai-agent.runSocialAgent` - Social media (35 tools)
+- `ai.ai-agent.runCommunicationAgent` - Messaging (94 tools)
+- `ai.ai-agent.runDataAgent` - Data analysis (88 tools)
+
+**Example:**
+```json
+{
+  "id": "agent",
+  "module": "ai.ai-agent.runAgent",
+  "inputs": {
+    "prompt": "{{trigger.userMessage}}",
+    "toolOptions": {
+      "categories": ["social", "ai"]
+    }
+  },
+  "outputAs": "result"
+}
+```
+Access: `{{result.text}}`
+
+**Parameters:**
+- `prompt` (required) - User's goal
+- `toolOptions.categories` (array) - `["social", "ai", "data"]`
+- `model` (optional) - Default: claude-haiku-4-5-20251001 (November 2025 cheap model)
+- `temperature` (optional) - 0-2, default: 0.7
+
+---
+
+## Workflow Storage (Persistent Data Across Runs)
+
+**When to use:** Workflow needs to remember data between executions (deduplication, state tracking, caching).
+
+**Common use cases:**
+- Track replied tweets/comments (avoid duplicates)
+- Store processed item IDs
+- Cache API responses temporarily
+- Maintain counters across runs
+
+**Available functions:**
+- `data.drizzle-utils.insertRecord` - Store data
+- `data.drizzle-utils.queryWhereIn` - Check for duplicates (batch)
+- `data.drizzle-utils.queryRecords` - Query with filters
+- `data.drizzle-utils.updateRecord` - Update existing records
+- `data.drizzle-utils.deleteRecord` - Delete records
+
+**CRITICAL: Always pass `workflowId: "{{workflowId}}"` for automatic table namespacing**
+
+### Example: Tweet Reply Deduplication
+
+```json
+{
+  "version": "1.0",
+  "name": "Reply to Tweets (No Duplicates)",
+  "description": "Find tweets, check if already replied, reply to new ones only",
+  "trigger": { "type": "cron", "config": { "schedule": "0 * * * *" } },
+  "config": {
+    "steps": [
+      {
+        "id": "fetch",
+        "module": "social.twitter.searchTweets",
+        "inputs": { "query": "AI automation", "maxResults": 10 },
+        "outputAs": "tweets"
+      },
+      {
+        "id": "extract_ids",
+        "module": "utilities.array-utils.pluck",
+        "inputs": { "arr": "{{tweets}}", "key": "id" },
+        "outputAs": "tweetIds"
+      },
+      {
+        "id": "check_duplicates",
+        "module": "data.drizzle-utils.queryWhereIn",
+        "inputs": {
+          "params": {
+            "workflowId": "{{workflowId}}",
+            "tableName": "replied_tweets",
+            "column": "tweet_id",
+            "values": "{{tweetIds}}"
+          }
+        },
+        "outputAs": "alreadyReplied"
+      },
+      {
+        "id": "filter_new",
+        "module": "utilities.javascript.execute",
+        "inputs": {
+          "code": "return tweets.filter(t => !alreadyReplied.includes(t.id))"
+        },
+        "outputAs": "newTweets"
+      },
+      {
+        "id": "reply_loop",
+        "type": "forEach",
+        "array": "{{newTweets}}",
+        "itemAs": "tweet",
+        "steps": [
+          {
+            "id": "generate_reply",
+            "module": "ai.ai-sdk.generateText",
+            "inputs": {
+              "options": {
+                "model": "gpt-4o-mini",
+                "prompt": "Write a helpful reply to: {{tweet.text}}"
+              }
+            },
+            "outputAs": "reply"
+          },
+          {
+            "id": "post_reply",
+            "module": "social.twitter.replyToTweet",
+            "inputs": {
+              "tweetId": "{{tweet.id}}",
+              "text": "{{reply.content}}"
+            },
+            "outputAs": "posted"
+          },
+          {
+            "id": "store_replied",
+            "module": "data.drizzle-utils.insertRecord",
+            "inputs": {
+              "params": {
+                "workflowId": "{{workflowId}}",
+                "tableName": "replied_tweets",
+                "data": {
+                  "tweet_id": "{{tweet.id}}",
+                  "reply_text": "{{reply.content}}",
+                  "replied_at": "{{posted.createdAt}}"
+                },
+                "expiresInDays": 7
+              }
+            },
+            "outputAs": "stored"
+          }
+        ]
+      }
+    ],
+    "returnValue": "{{newTweets}}"
+  }
+}
+```
+
+**Key Features:**
+
+1. **Automatic table creation** - No schema needed, columns inferred from data
+2. **Workflow-scoped** - Tables named `workflow_storage_{workflowId}_{tableName}`
+3. **Auto-expiration** - Use `expiresInDays` for TTL (optional)
+4. **Dynamic schema** - Add new fields anytime, columns auto-add
+
+**Parameters (ALL require `params` wrapper):**
+
+**insertRecord:**
+```json
+"inputs": {
+  "params": {
+    "workflowId": "{{workflowId}}",
+    "tableName": "replied_tweets",
+    "data": { "tweet_id": "123", "status": "replied" },
+    "expiresInDays": 7
+  }
+}
+```
+- `workflowId`: `"{{workflowId}}"` (required for scoping)
+- `tableName`: Your table name (e.g., "replied_tweets")
+- `data`: Object with any fields
+- `expiresInDays`: Optional auto-delete after N days
+
+**queryWhereIn (batch duplicate check):**
+```json
+"inputs": {
+  "params": {
+    "workflowId": "{{workflowId}}",
+    "tableName": "replied_tweets",
+    "column": "tweet_id",
+    "values": "{{tweetIds}}"
+  }
+}
+```
+- Returns: Array of values that exist in the table
+
+**queryRecords:**
+```json
+"inputs": {
+  "params": {
+    "workflowId": "{{workflowId}}",
+    "tableName": "replied_tweets",
+    "where": {"status": "pending"},
+    "limit": 100
+  }
+}
+```
+- `where`: Optional filters
+- `limit`: Max records to return
+
+---
+
 ## Quick Reference
 
 **Variable syntax:**
@@ -344,6 +543,6 @@ Access: `{{trigger.message}}`, `{{trigger.chatId}}`, `{{trigger.userId}}`
 **Variable undefined**: Check outputAs in previous steps
 **Credential error**: `grep "credential\." workflow/*.json` for exact names
 
-**For detailed debugging**: Use `/fix-workflow` command
+**For detailed debugging**: Review auto-fix output and validation errors
 
 **For complete examples**: Read `examples.md` (512 lines of annotated workflows)

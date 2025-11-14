@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { workflowsTable } from '@/lib/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { logger } from '@/lib/logger';
 import { queueWorkflowExecution } from '@/lib/workflows/workflow-queue';
 import { createHmac, timingSafeEqual } from 'crypto';
 import { checkStrictRateLimit } from '@/lib/ratelimit';
+import { auth } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -169,9 +170,15 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    // Verify authentication for GET requests
+    const session = await auth();
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const { id } = await context.params;
 
-    // Get the workflow
+    // Get the workflow with ownership verification
     const workflows = await db
       .select({
         id: workflowsTable.id,
@@ -180,12 +187,17 @@ export async function GET(
         trigger: workflowsTable.trigger,
       })
       .from(workflowsTable)
-      .where(eq(workflowsTable.id, id))
+      .where(
+        and(
+          eq(workflowsTable.id, id),
+          eq(workflowsTable.userId, session.user.id)
+        )
+      )
       .limit(1);
 
     if (workflows.length === 0) {
       return NextResponse.json(
-        { error: 'Workflow not found' },
+        { error: 'Workflow not found or access denied' },
         { status: 404 }
       );
     }

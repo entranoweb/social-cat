@@ -1,8 +1,9 @@
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Copy, Download, Check } from 'lucide-react';
-import { useState } from 'react';
+import { Copy, Download, Check, X } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 
 interface Column {
@@ -16,11 +17,19 @@ interface DataTableProps {
   config?: {
     columns?: Column[];
   };
+  onClose?: () => void;
 }
 
-export function DataTable({ data, config }: DataTableProps) {
+export function DataTable({ data, config, onClose }: DataTableProps) {
   // Hook must be at the top before any returns
   const [copied, setCopied] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Ensure component is mounted before using portal
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Handle single object with nested array
   if (!Array.isArray(data) && typeof data === 'object' && data !== null) {
@@ -193,38 +202,81 @@ export function DataTable({ data, config }: DataTableProps) {
     toast.success('Downloaded as table-data.csv');
   };
 
+  const floatingButtons = mounted && createPortal(
+    <div
+      style={{
+        position: 'fixed',
+        top: '80px',
+        right: '24px',
+        zIndex: 9999,
+        display: 'flex',
+        gap: '8px',
+        pointerEvents: 'auto'
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+      onMouseDown={(e) => {
+        e.stopPropagation();
+        e.preventDefault();
+      }}
+    >
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleCopy();
+        }}
+        className="h-8 gap-2 bg-background shadow-xl border-2 border-primary/20"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+        {copied ? 'Copied' : 'Copy CSV'}
+      </Button>
+      <Button
+        size="sm"
+        variant="outline"
+        onClick={(e) => {
+          e.stopPropagation();
+          handleDownload();
+        }}
+        className="h-8 gap-2 bg-background shadow-xl border-2 border-primary/20"
+      >
+        <Download className="h-3.5 w-3.5" />
+        Download CSV
+      </Button>
+      {onClose && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+          className="h-8 gap-2 bg-background shadow-xl border-2 border-primary/20"
+        >
+          <X className="h-3.5 w-3.5" />
+          Close
+        </Button>
+      )}
+    </div>,
+    document.body
+  );
+
   return (
-    <div className="w-full -mx-6 space-y-3">
-      <div className="flex justify-end px-6">
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCopy}
-            className="h-8 gap-2"
-          >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
-            {copied ? 'Copied' : 'Copy CSV'}
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleDownload}
-            className="h-8 gap-2"
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download CSV
-          </Button>
-        </div>
-      </div>
-      <div className="block max-w-full overflow-x-auto">
+    <>
+      {floatingButtons}
+      {/* Scrollable table container */}
+      <div className="w-full -mx-6">
+        <div className="w-full overflow-x-auto px-6" ref={scrollContainerRef}>
         <div className="relative overflow-hidden rounded-lg border-0 bg-gradient-to-br from-primary/5 via-blue-500/3 to-primary/5 backdrop-blur-sm shadow-sm">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-primary via-blue-400 to-primary opacity-80" />
-          <table className="min-w-full border-collapse mt-1">
-            <thead>
-              <tr className="border-b border-border/50 bg-background/50">
+          <table className="w-full border-collapse mt-1" style={{ tableLayout: 'auto' }}>
+            <thead className="bg-background/95 backdrop-blur-sm">
+              <tr className="border-b border-border/50">
               {columns.map((col) => (
-                <th key={col.key} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap">
+                <th key={col.key} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide whitespace-nowrap" style={{ minWidth: '150px' }}>
                   {col.label}
                 </th>
               ))}
@@ -234,8 +286,8 @@ export function DataTable({ data, config }: DataTableProps) {
               {data.map((row, idx) => (
                 <tr key={idx} className="border-b border-border/30 last:border-0 hover:bg-gradient-to-r hover:from-primary/5 hover:to-transparent transition-all duration-200">
                 {columns.map((col) => (
-                  <td key={col.key} className="px-4 py-3 text-sm align-top">
-                    <div className="max-w-xs">
+                  <td key={col.key} className="px-4 py-3 text-sm align-top" style={{ minWidth: '150px', maxWidth: '400px' }}>
+                    <div className="break-words overflow-hidden">
                       <CellRenderer value={getNestedValue(row, col.key)} type={col.type} />
                     </div>
                   </td>
@@ -245,8 +297,9 @@ export function DataTable({ data, config }: DataTableProps) {
             </tbody>
           </table>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
