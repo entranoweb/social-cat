@@ -19,7 +19,7 @@ const args = process.argv.slice(2);
 // Parse flags
 const formatFlag = args.find((arg) => arg === '--format')
   ? args[args.indexOf('--format') + 1]
-  : 'text';
+  : 'json';  // Default to JSON for programmatic usage
 const categoryFlag = args.find((arg) => arg === '--category')
   ? args[args.indexOf('--category') + 1]
   : null;
@@ -244,7 +244,11 @@ function searchModules(): ModuleInfo[] {
  */
 function formatResults(results: ModuleInfo[]): void {
   if (results.length === 0) {
-    console.log('No modules found');
+    if (formatFlag === 'json') {
+      console.log('[]');  // Valid empty JSON array
+    } else {
+      console.log('No modules found');
+    }
     return;
   }
 

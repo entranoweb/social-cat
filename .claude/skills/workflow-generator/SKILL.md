@@ -1,178 +1,71 @@
 ---
 name: workflow-generator
-description: "YOU MUST USE THIS SKILL when the user wants to CREATE or BUILD a NEW workflow automation. Activate for requests like: 'create a workflow', 'build a workflow', 'generate a workflow', 'make a workflow', 'I want to automate', 'automate X to Y', 'schedule a task', 'monitor X and send to Y'. This skill searches for relevant modules, builds JSON config, validates, tests, and imports workflows to database. DO NOT use generic file reading/writing - use this skill instead for workflow generation tasks."
+description: "YOU MUST USE THIS SKILL when the user wants to CREATE or BUILD a NEW workflow automation. Activate for requests like: 'create a workflow', 'build a workflow', 'generate a workflow', 'make a workflow', 'I want to automate', 'automate X to Y', 'schedule a task', 'monitor X and send to Y'. This skill creates workflows from simple YAML plans with automatic validation and import."
 ---
 
-# Workflow Generator (Interactive)
+# Workflow Generator
 
-**NEW APPROACH**: Ask clarifying questions FIRST, then build with 100% accuracy using enhanced module search.
+**Generate complete workflows from simple YAML plans - one command, zero errors.**
+
+## ⚠️ CRITICAL: Use workflow:build
+
+**NEVER manually write workflow JSON!** Create a YAML plan and use:
+
+```bash
+npm run workflow:build plans/workflow-plan.yaml
+```
+
+**What it does automatically (12-layer validation):**
+1. ✅ Validates modules exist in registry
+2. ✅ Validates parameter names match signatures
+3. ✅ Detects unsupported features (rest parameters, function-as-string)
+4. ✅ Auto-wraps params/options functions
+5. ✅ Builds workflow JSON
+6. ✅ Validates schema structure
+7. ✅ Validates trigger configuration (cron schedule, chat inputVariable)
+8. ✅ Validates returnValue variable exists
+9. ✅ Analyzes credential usage
+10. ✅ Detects unused variables (dead code)
+11. ✅ Runs dry-run test with mocks
+12. ✅ Imports to database (only if all checks pass)
+
+**Result: If it builds, it WORKS. Zero runtime errors.**
+
+---
 
 ## Process Overview
 
 ```
-User Request → Analyze Intent → Ask Questions → Search Modules → Build JSON → Validate → Import
-                                      ↑
-                            INTERACTIVE CLARIFICATION
-                            (Eliminates ambiguity)
+User Request → Ask Questions → Create YAML Plan → Build Workflow → Done!
+                      ↑                                    ↑
+              Clarify requirements              Automatic validation & import
 ```
+
+**3 Simple Steps:**
+1. Ask clarifying questions (AskUserQuestion tool)
+2. Create plans/workflow-plan.yaml based on answers
+3. Run: `npm run workflow:build plans/workflow-plan.yaml`
+
+**Note:** Workflow plans are stored in the `plans/` directory
 
 ---
 
-## STEP 1: ANALYZE REQUEST & ASK QUESTIONS
+## STEP 1: Ask Clarifying Questions
 
-**ALWAYS start by asking clarifying questions using the AskUserQuestion tool.**
+**ALWAYS start by asking questions using the AskUserQuestion tool.**
 
-### What to Ask vs What Frontend Handles
+### Question Templates
 
-**✅ ASK ABOUT (affects workflow logic):**
-- Trigger TYPE (cron, manual, webhook, chat)
-- Deduplication (yes/no)
-- AI model (GPT-4o-mini, Claude, etc.)
-- Content generation method (AI vs template)
-- Output format (table, JSON, text)
-- Data operations needed (filter, transform, etc.)
+**Always ask at minimum:**
+1. **Trigger type** - When workflow runs (manual/cron/webhook/chat)
+2. **Output format** - How to display results (json/table/text)
 
-**❌ DON'T ASK (frontend configures):**
-- Cron schedule frequency (hourly, daily, etc.) - UI dropdown
-- Telegram/Discord bot tokens - Settings dialog
-- Gmail/Outlook filters - Settings dialog
-- Webhook URLs - Generated after import
-- API rate limits - Handled by modules
-- Specific search keywords - Can be placeholder, user edits later
+**Additional questions based on workflow type:**
+- **Social Media**: Deduplication (Yes/No)
+- **AI Generation**: AI Model (GPT-4o-mini/Claude/etc)
+- **Data Processing**: Operations needed (filter/transform/aggregate)
 
-**Why this split?**
-- Workflow JSON = LOGIC (what steps, which modules)
-- Frontend UI = RUNTIME (when to run, which accounts, filters)
-- Users can change runtime settings anytime without regenerating workflow
-
-### Detect Workflow Type
-
-Analyze the user's request to determine workflow type:
-
-- **Social Media** - Keywords: twitter, reddit, linkedin, reply, post, comment
-- **AI Generation** - Keywords: generate, write, create content, summarize
-- **Data Processing** - Keywords: transform, filter, parse, analyze
-- **API Integration** - Keywords: fetch, sync, pull data, webhook
-- **Email/Communication** - Keywords: email, slack, send message, notify
-- **Scheduled Monitoring** - Keywords: check, monitor, watch, track
-
-### Question Templates by Type
-
-#### **Social Media Workflows**
-Ask 2-3 questions:
-1. **Trigger type** (NOT schedule details - frontend handles that)
-2. **Deduplication** (always ask)
-3. **Content generation method**
-
-```typescript
-AskUserQuestion({
-  questions: [
-    {
-      question: "How should this workflow be triggered?",
-      header: "Trigger",
-      multiSelect: false,
-      options: [
-        { label: "Scheduled", description: "Run automatically on a schedule (user sets frequency in UI) ⭐" },
-        { label: "Manual", description: "Run on-demand when user clicks Run button" },
-        { label: "Webhook", description: "Triggered by external HTTP requests" }
-      ]
-    },
-    {
-      question: "Should we track and avoid duplicate replies?",
-      header: "Deduplication",
-      multiSelect: false,
-      options: [
-        { label: "Yes", description: "Store replied IDs in database - Prevents spam ⭐ Recommended" },
-        { label: "No", description: "Reply to all matches every time - May create duplicates" }
-      ]
-    },
-    {
-      question: "How should replies be generated?",
-      header: "Generation",
-      multiSelect: false,
-      options: [
-        { label: "AI-powered", description: "GPT generates personalized replies ⭐ Recommended" },
-        { label: "Fixed template", description: "Use same message every time" }
-      ]
-    }
-  ]
-})
-```
-
-**IMPORTANT**:
-- Scheduled workflows use `{"type": "cron", "config": {}}` - empty config!
-- User sets actual schedule (hourly, daily, etc.) via frontend UI dropdown
-- Do NOT hardcode cron expressions in JSON
-
-#### **AI Content Generation Workflows**
-Ask 2-3 questions:
-1. **AI Model** (if not specified)
-2. **Temperature** (if not specified)
-3. **Output format**
-
-```typescript
-AskUserQuestion({
-  questions: [
-    {
-      question: "Which AI model should generate the content?",
-      header: "AI Model",
-      multiSelect: false,
-      options: [
-        { label: "GPT-4o-mini", description: "Fast, cheap, good quality - Best for most use cases ⭐" },
-        { label: "Claude Haiku", description: "Fast Anthropic model - Good alternative" },
-        { label: "GPT-4o", description: "Most capable, higher cost - For complex tasks" },
-        { label: "Claude Sonnet", description: "Best quality, highest cost - Premium option" }
-      ]
-    },
-    {
-      question: "How creative should the AI be?",
-      header: "Creativity",
-      multiSelect: false,
-      options: [
-        { label: "Balanced", description: "Temperature 0.7 - Good mix of consistency and variety ⭐" },
-        { label: "Focused", description: "Temperature 0.3 - Consistent, factual, deterministic" },
-        { label: "Creative", description: "Temperature 1.2 - More varied and creative outputs" }
-      ]
-    }
-  ]
-})
-```
-
-#### **Data Processing Workflows**
-Ask 1-2 questions:
-1. **Output format**
-2. **Data source** (if ambiguous)
-
-```typescript
-AskUserQuestion({
-  questions: [
-    {
-      question: "How should the results be displayed?",
-      header: "Output",
-      multiSelect: false,
-      options: [
-        { label: "Table", description: "Structured data with columns - Best for lists ⭐" },
-        { label: "JSON", description: "Raw data format - Best for further processing" },
-        { label: "Text", description: "Plain text summary - Best for single values" }
-      ]
-    },
-    {
-      question: "What operations are needed?",
-      header: "Operations",
-      multiSelect: true,
-      options: [
-        { label: "Filter data", description: "Remove unwanted items based on conditions" },
-        { label: "Transform fields", description: "Change data structure or values" },
-        { label: "Sort/group", description: "Organize data by specific fields" },
-        { label: "Aggregate", description: "Calculate totals, averages, counts" }
-      ]
-    }
-  ]
-})
-```
-
-#### **Generic Workflow** (unclear type)
-Ask foundational questions to understand intent:
+**Standard question template:**
 
 ```typescript
 AskUserQuestion({
@@ -182,29 +75,24 @@ AskUserQuestion({
       header: "Trigger",
       multiSelect: false,
       options: [
-        { label: "Scheduled", description: "Automatic on a schedule (set frequency in UI after import) ⭐" },
-        { label: "Manual", description: "On-demand when you click Run" },
-        { label: "Webhook", description: "External HTTP trigger" },
-        { label: "Chat", description: "Conversational with AI responses" }
+        { label: "Manual", description: "On-demand (click Run)" },
+        { label: "Scheduled", description: "Automatic (cron)" },
+        { label: "Webhook", description: "External HTTP" },
+        { label: "Chat", description: "AI conversation" },
+        { label: "Telegram Bot", description: "Telegram messages" },
+        { label: "Discord Bot", description: "Discord messages" }
       ]
     },
     {
-      question: "What type of output will this workflow produce?",
+      question: "How should results be displayed?",
       header: "Output",
       multiSelect: false,
       options: [
-        { label: "List of items", description: "Multiple records - Display as table ⭐" },
-        { label: "Single value", description: "One result - Display as text/JSON" },
-        { label: "AI response", description: "Chat/conversational output" }
-      ]
-    },
-    {
-      question: "Does this workflow need to store data between runs?",
-      header: "Persistence",
-      multiSelect: false,
-      options: [
-        { label: "Yes", description: "Track processed items, avoid duplicates ⭐ Recommended for monitoring" },
-        { label: "No", description: "Process everything fresh each time" }
+        { label: "JSON", description: "Raw data format" },
+        { label: "Table", description: "Structured columns" },
+        { label: "List", description: "List of items" },
+        { label: "Text", description: "Plain text" },
+        { label: "Markdown", description: "Formatted text" }
       ]
     }
   ]
@@ -213,102 +101,318 @@ AskUserQuestion({
 
 ---
 
-## STEP 2: SEARCH MODULES WITH FULL DETAILS
+## STEP 2: Create Workflow Plan
 
-After getting user's answers, search for modules:
+Based on user answers, create a YAML plan file:
 
-```bash
-npm run search <keyword> -- --format json --limit 5
+### Plan Format
+
+```yaml
+name: Workflow Name
+description: Optional workflow description
+trigger: manual | cron | webhook | telegram | discord | chat | chat-input
+output: json | table | list | text | markdown | image | images | chart
+outputColumns: [col1, col2]  # Optional, for table/list output
+category: category-name       # Optional
+tags: [tag1, tag2]           # Optional
+steps:
+  - module: category.module.function
+    id: unique-step-id
+    name: Human Readable Name (optional)
+    inputs:
+      param1: "{{variable}}"
+      param2: value
+    outputAs: variableName (optional)
 ```
 
-**Search returns enhanced details:**
-- Full parameter schemas
-- Required vs optional params
-- Wrapper type (params/options/direct)
-- Example inputs
-- Related modules
+### User Answer → Plan Mapping
 
-**Use the templateInputs from search results - no guessing!**
+**Trigger Types (choose one):**
+- `manual` - On-demand execution (click Run button)
+- `cron` - Scheduled execution (set frequency in UI after import)
+- `webhook` - External HTTP trigger
+- `telegram` - Telegram bot message trigger
+- `discord` - Discord bot message trigger
+- `chat` - AI chat conversation trigger
+- `chat-input` - Chat with structured input
 
----
+**Output Types (choose one):**
+- `json` - Raw JSON data
+- `table` - Structured table with columns
+- `list` - List of items
+- `text` - Plain text output
+- `markdown` - Formatted markdown
+- `image` - Single image display
+- `images` - Multiple images gallery
+- `chart` - Data visualization chart
 
-## STEP 3: BUILD WORKFLOW JSON
+**Common mappings from user answers:**
+- "Manual" → `trigger: manual`
+- "Scheduled" → `trigger: cron`
+- "JSON" → `output: json`
+- "Table" → `output: table`
 
-Combine:
-- User's answers from questions
-- Module details from search
-- Storage pattern (if deduplication = Yes)
-- AI config (if AI model selected)
+**AI Model Answer (for AI workflows):**
+- "GPT-4o-mini" → Add step with `model: gpt-4o-mini, provider: openai`
+- "Claude Haiku" → Add step with `model: claude-haiku-4-5-20251001, provider: anthropic`
 
-**Key Mappings from User Answers:**
-
-**Trigger Answer → Trigger Config:**
-- "Scheduled" → `{"type": "cron", "config": {}}` (user sets schedule in UI after import)
-- "Manual" → `{"type": "manual", "config": {}}`
-- "Webhook" → `{"type": "webhook", "config": {}}`
-- "Chat" → `{"type": "chat", "config": {}}`
-
-**IMPORTANT**: Leave trigger config empty! Frontend handles:
-- Cron schedules (via dropdown: hourly, daily, etc.)
-- Bot tokens (Telegram, Discord)
-- Email filters (Gmail, Outlook)
-- Webhook URLs
-Users configure these AFTER import via Settings dialog.
-
-**Deduplication Answer → Storage Steps:**
-- "Yes" → Add queryWhereIn, filter, insertRecord steps
+**Deduplication Answer (for social workflows):**
+- "Yes" → Add storage steps (queryWhereIn, filter, insertRecord)
 - "No" → Skip storage steps
 
-**AI Model Answer → Model Config:**
-- "GPT-4o-mini" → `{"model": "gpt-4o-mini", "provider": "openai"}`
-- "Claude Haiku" → `{"model": "claude-haiku-4-5-20251001", "provider": "anthropic"}`
-- "GPT-4o" → `{"model": "gpt-4o", "provider": "openai"}`
-- "Claude Sonnet" → `{"model": "claude-sonnet-4-5-20250929", "provider": "anthropic"}`
+### Finding Modules
 
-**Temperature Answer → Temperature Value:**
-- "Balanced" → `0.7`
-- "Focused" → `0.3`
-- "Creative" → `1.2`
-
-**Output Type Answer → outputDisplay:**
-- "Table" → `{"type": "table", "columns": [...]}`
-- "JSON" → `{"type": "json"}`
-- "Text" → `{"type": "text"}`
-
----
-
-## STEP 4: VALIDATE & AUTO-FIX
+Search for modules you need:
 
 ```bash
-# 1. Auto-fix common issues
-npx tsx scripts/auto-fix-workflow.ts workflow/{name}.json --write
+npm run modules:search <keyword> -- --limit 5
+```
 
-# 2. Validate
-npm run validate workflow/{name}.json
+Use the `path` from search results as the `module` in your plan.
 
-# 3. If errors, analyze and fix
-# (Most errors should be prevented by questions + search)
+### Available Module Categories
+
+**Utilities (No API Keys Required):**
+- `utilities.math` - 20+ operations (add, subtract, multiply, divide, max, min, round, floor, ceil, abs, power, sqrt, etc.)
+- `utilities.array-utils` - 30+ operations (first, last, sort, filter, group, pluck, sum, average, unique, flatten, chunk, etc.)
+- `utilities.string-utils` - 15+ operations (toSlug, camelCase, pascalCase, truncate, capitalize, stripHtml, isEmail, etc.)
+- `utilities.datetime` - 20+ operations (now, format, parse, add/subtract days/hours, comparisons, start/end of day, etc.)
+- `utilities.json-transform` - 15+ operations (parse, stringify, get, set, pick, omit, merge, flatten, unflatten, etc.)
+- `utilities.csv` - 5+ operations (parse, stringify, csvToJson, jsonToCsv, etc.)
+- `utilities.xml` - 10+ operations (parse, build, validate, extract, etc.)
+- `utilities.validation` - 5+ operations (validateRequired, validateTypes, validateEmail, validateUrl, etc.)
+- `utilities.aggregation` - 7+ operations (median, variance, stdDev, percentile, mode, etc.)
+- `utilities.filtering` - 5+ operations (filterByCondition, findByCondition, containsAll, containsAny, etc.)
+- `utilities.batching` - 5+ operations (chunk, createBatches, paginate, etc.)
+- `utilities.control-flow` - 10+ operations (conditional, switchCase, ifElse, partitionByCondition, tryCatch, retry, sleep, etc.)
+- `utilities.javascript` - 7+ operations (execute, filterArray, mapArray, reduceArray, evaluateExpression, etc.)
+- `utilities.http` - 5+ operations (httpGet, httpPost, httpPut, httpDelete, httpRequest, etc.)
+
+**AI (Requires API Keys):**
+- `ai.ai-sdk` - generateText, chat, streamGeneration, generateJSON, etc.
+
+**Data (Database Access):**
+- `data.drizzle-utils` - queryWhereIn, insertRecord, updateRecord, deleteRecord, etc.
+
+**Social Media (Requires Platform Credentials):**
+- `social.twitter.*`, `social.reddit.*`, `social.linkedin.*`, etc.
+
+Use `npm run modules:search <keyword>` to find specific modules.
+
+### Example Plans
+
+**Simple Math Workflow:**
+```yaml
+name: Test Math Utilities
+trigger: manual
+output: json
+steps:
+  - module: utilities.javascript.evaluateExpression
+    id: setup-data
+    inputs:
+      expression: "({numbers: [1, 2, 3, 4, 5]})"
+    outputAs: data
+
+  - module: utilities.math.max
+    id: calc-max
+    inputs:
+      numbers: "{{data.numbers}}"
+    outputAs: maximum
+
+  - module: utilities.array-utils.sum
+    id: calc-sum
+    inputs:
+      arr: "{{data.numbers}}"
+```
+
+**AI Content Generation:**
+```yaml
+name: Generate Blog Post
+trigger: manual
+output: text
+steps:
+  - module: ai.ai-sdk.generateText
+    id: generate-content
+    inputs:
+      prompt: "Write a blog post about {{topic}}"
+      model: gpt-4o-mini
+      provider: openai
+```
+
+**Complex Data Pipeline (Multi-step transformation):**
+```yaml
+name: Data Processing Pipeline
+trigger: manual
+output: table
+outputColumns: [id, name, category, score]
+steps:
+  # 1. Generate test data
+  - module: utilities.javascript.evaluateExpression
+    id: raw-data
+    inputs:
+      expression: "([{id: 1, name: 'Item A', value: 100, type: 'premium'}, {id: 2, name: 'Item B', value: 50, type: 'basic'}])"
+    outputAs: data
+
+  # 2. Filter high-value items
+  - module: utilities.filtering.filterArrayByCondition
+    id: filter-items
+    inputs:
+      items: "{{data}}"
+      field: value
+      operator: ">"
+      value: 75
+    outputAs: filtered
+
+  # 3. Transform data structure
+  - module: utilities.javascript.execute
+    id: transform
+    inputs:
+      code: "return items.map(item => ({id: item.id, name: item.name, category: item.type, score: item.value / 10}))"
+      context:
+        items: "{{filtered}}"
+    outputAs: transformed
+
+  # 4. Sort by score
+  - module: utilities.array-utils.sortBy
+    id: sort-results
+    inputs:
+      arr: "{{transformed}}"
+      key: score
+      order: desc
+    outputAs: finalResults
+```
+
+**Social Media with Deduplication:**
+```yaml
+name: Reply to Tweets
+trigger: cron
+output: table
+steps:
+  - module: social.twitter.searchTweets
+    id: search-tweets
+    inputs:
+      query: "AI automation"
+      maxResults: 10
+    outputAs: tweets
+
+  - module: utilities.array-utils.pluck
+    id: extract-ids
+    inputs:
+      arr: "{{tweets}}"
+      key: id
+    outputAs: tweetIds
+
+  - module: data.drizzle-utils.queryWhereIn
+    id: check-replied
+    inputs:
+      workflowId: "{{workflowId}}"
+      tableName: replied_tweets
+      column: tweet_id
+      values: "{{tweetIds}}"
+    outputAs: repliedIds
+
+  - module: utilities.filtering.filterArrayByCondition
+    id: filter-new
+    inputs:
+      items: "{{tweets}}"
+      field: id
+      operator: not in
+      value: "{{repliedIds}}"
+    outputAs: newTweets
+
+  - module: ai.ai-sdk.generateText
+    id: generate-reply
+    inputs:
+      prompt: "Write a reply to: {{newTweets[0].text}}"
+      model: gpt-4o-mini
+      provider: openai
+    outputAs: reply
+
+  - module: social.twitter.replyToTweet
+    id: post-reply
+    inputs:
+      tweetId: "{{newTweets[0].id}}"
+      text: "{{reply.content}}"
+
+  - module: data.drizzle-utils.insertRecord
+    id: store-replied
+    inputs:
+      workflowId: "{{workflowId}}"
+      tableName: replied_tweets
+      data:
+        tweet_id: "{{newTweets[0].id}}"
+      ttl: 2592000
 ```
 
 ---
 
-## STEP 5: IMPORT TO DATABASE
+## STEP 3: Build Workflow
 
 ```bash
-npx tsx scripts/import-workflow.ts workflow/{name}.json
+npm run workflow:build plans/workflow-plan.yaml
 ```
 
-Tell user: "✅ Workflow created and imported! View at: http://localhost:3000/dashboard/workflows"
+**Validation Output Example:**
+```
+🔍 Validating 5 steps...
+   ✅ Step 1 ("setup-data") validated
+   ✅ Step 2 ("calc-max") validated
+   ... (all steps)
+✅ All steps validated successfully!
+
+🔍 Validating trigger configuration...
+   ✅ Cron schedule valid: "0 * * * *"
+
+🔍 Validating returnValue...
+   ✅ ReturnValue variable "result" is produced by step: final-step
+
+🔍 Analyzing credential usage...
+   📋 Credentials used: openai_api_key
+   ⚠️  Undocumented credentials: openai_api_key
+
+🔍 Analyzing data flow...
+   ⚠️  Unused variables: tempVar
+
+🧪 Running dry-run test...
+   Step 1/5: setup-data ✅
+   Step 2/5: calc-max ✅
+   ... (all steps execute with mocks)
+✅ Dry-run completed successfully!
+
+✅ Workflow imported successfully!
+🎉 View at: http://localhost:3000/dashboard/workflows
+```
+
+**If errors exist:**
+```
+❌ Step "calc-max": Module "utilities.math.max" uses rest parameters (...) which are not supported
+   💡 Use utilities.array-utils.max instead
+
+❌ ReturnValue references "{{nonExistent}}" but no step produces it
+
+❌ Dry-run failed: Step "step2" - Unresolved variable {{undefinedVar}}
+
+Workflow NOT imported - fix errors first
+```
 
 ---
 
-## Common Patterns Library
+## Critical Rules
+
+1. **ALWAYS ask questions first** - Use AskUserQuestion tool
+2. **ALWAYS use workflow:build** - Never manually write JSON
+3. **Search for modules** - Use `npm run modules:search` to find module paths
+4. **Create YAML plan** - Simple, readable format
+5. **Auto-wrapping works** - Don't wrap params/options manually, script does it
+6. **Expect zero errors** - Plan builder validates everything
+
+---
+
+## Common Patterns
 
 ### Pattern: Social Media Deduplication
 
-**When**: User wants to reply/comment without duplicates
-**Questions**: Schedule, Deduplication (Yes)
-**Steps**:
+**Steps needed:**
 1. Search/fetch items
 2. Extract IDs (pluck)
 3. Check storage (queryWhereIn)
@@ -318,68 +422,252 @@ Tell user: "✅ Workflow created and imported! View at: http://localhost:3000/da
 
 ### Pattern: AI Content Generation
 
-**When**: User wants AI-generated content
-**Questions**: AI Model, Temperature, Output format
-**Steps**:
+**Steps needed:**
 1. Prepare input data
-2. Generate with AI (ai-sdk.generateText)
-3. Extract content (.content)
-4. Return formatted output
-
-### Pattern: Scheduled Data Sync
-
-**When**: User wants to sync data on schedule
-**Questions**: Schedule, Output format
-**Steps**:
-1. Fetch from source API
-2. Transform data
-3. Return or store
+2. Generate with ai.ai-sdk.generateText
+3. Extract content (.content property)
+4. Return or post
 
 ---
 
-## Critical Rules (Keep Minimal)
+## Advanced Features
 
-1. **ALWAYS ask questions first** - Don't assume user's intent
-2. **Use search results** - Module details include exact parameters
-3. **Trust the templates** - Search returns ready-to-use JSON
-4. **Storage requires params wrapper** - All drizzle-utils functions
-5. **AI SDK requires options wrapper** - All ai.ai-sdk functions
-6. **Validate before import** - Catch errors early
+### Custom JavaScript Logic
 
----
+For complex operations that need functions (filter, map, transform), use JavaScript modules:
 
-## Example: Full Interactive Session
-
-**User**: "I want to reply to tweets about AI automation"
-
-**LLM Action 1**: Analyze → Detected type: Social Media
-**LLM Action 2**: Ask questions (Schedule, Deduplication, AI model)
-**User selects**: "Every hour", "Yes (dedup)", "GPT-4o-mini"
-
-**LLM Action 3**: Search modules
-```bash
-npm run search "twitter search" -- --format json --limit 3
-npm run search "twitter reply" -- --format json --limit 3
-npm run search "drizzle storage" -- --format json --limit 3
+**Filter array with custom logic:**
+```yaml
+- module: utilities.javascript.filterArray
+  id: filter-items
+  inputs:
+    items: "{{data}}"
+    code: "return item.score > 80"  # Custom condition
 ```
 
-**LLM Action 4**: Build JSON with:
-- Cron trigger (hourly)
-- Storage pattern (queryWhereIn + insertRecord)
-- AI generation (GPT-4o-mini, temp 0.7)
-- Exact parameters from search results
+**Map/transform array:**
+```yaml
+- module: utilities.javascript.mapArray
+  id: transform-items
+  inputs:
+    items: "{{data}}"
+    code: "return { id: item.id, value: item.value * 2 }"
+```
 
-**LLM Action 5**: Validate & import
-**Output**: "✅ Workflow 'Reply to AI Tweets' created! Running hourly with deduplication."
+**Reduce array:**
+```yaml
+- module: utilities.javascript.reduceArray
+  id: sum-values
+  inputs:
+    items: "{{data}}"
+    initialValue: 0
+    code: "return accumulator + item.value"
+```
+
+**Any custom logic:**
+```yaml
+- module: utilities.javascript.execute
+  id: custom-logic
+  inputs:
+    code: "return data.filter(x => x > 5).map(x => x * 2)"
+    context:
+      data: "{{numbers}}"
+```
+
+### ReturnValue (Optional)
+
+The builder auto-sets `returnValue` to the last step's `outputAs`:
+
+```yaml
+steps:
+  - module: utilities.math.add
+    id: final-calc
+    outputAs: result  # Auto-set as returnValue
+```
+
+**Custom returnValue:**
+```yaml
+returnValue: "{{customVariable}}"  # Override auto-detection
+steps:
+  # ...
+```
+
+### Trigger Configuration
+
+**Cron triggers** auto-get `schedule: "0 * * * *"` (hourly)
+**Chat triggers** auto-get `inputVariable: "userInput"`
+
+Customize in UI after import.
 
 ---
 
-## Advantages Over workflow-builder
+## Common Issues & Solutions
 
-✅ **No ambiguity** - Questions eliminate guessing
-✅ **Better UX** - Users make informed choices
-✅ **Fewer errors** - Clarification prevents mistakes
-✅ **Faster** - Less back-and-forth fixing issues
-✅ **Scalable** - Works for any workflow complexity
+### ❌ Rest Parameters (Spread)
+**Problem:** Some modules use `...param` (rest parameters) which don't work in workflows
+**Example:** `utilities.math.max(...numbers)` expects individual arguments
 
-**Use this skill for reliable, production-ready workflow generation.**
+**Solution:** Use array-utils versions instead
+```yaml
+# ❌ Wrong - uses rest parameters:
+- module: utilities.math.max
+  inputs:
+    numbers: [1, 2, 3]  # Won't work!
+
+# ✅ Correct - takes array:
+- module: utilities.array-utils.max
+  inputs:
+    arr: [1, 2, 3]
+```
+
+**Other affected modules:** `math.min`, `array-utils.intersection`, `array-utils.union`, `json-transform.deepMerge`, `control-flow.coalesce`
+
+### ❌ JavaScript Context
+**Problem:** `filterArray/mapArray` only provide `{item, index, items}`, no custom context
+
+**Solution:** Use `javascript.execute` for custom context
+```yaml
+# ❌ Wrong - context not supported:
+- module: utilities.javascript.filterArray
+  inputs:
+    items: "{{data}}"
+    code: "return item > threshold"  # threshold undefined!
+
+# ✅ Correct - use execute with context:
+- module: utilities.javascript.execute
+  inputs:
+    code: "return data.filter(x => x > threshold)"
+    context:
+      data: "{{data}}"
+      threshold: 50
+```
+
+### ❌ Table Output Structure
+**Problem:** Table output needs array of objects, not complex nested object
+
+**Solution:** Point returnValue to the array
+```yaml
+# ❌ Wrong:
+returnValue: "{{complexObject}}"  # Returns {posts: [...], meta: {...}}
+
+# ✅ Correct:
+returnValue: "{{complexObject.posts}}"  # Returns just the array
+```
+
+---
+
+## Modules That Use Wrappers (Auto-Wrapped)
+
+**Options wrapper** (inputs wrapped in `options: {...}`):
+- All `ai.ai-sdk.*` functions (generateText, chat, etc.)
+- All `utilities.javascript.*` functions (execute, filterArray, mapArray, etc.)
+
+**Params wrapper** (inputs wrapped in `params: {...}`):
+- All `data.drizzle-utils.*` functions (queryWhereIn, insertRecord, etc.)
+
+**Direct parameters (no wrapper needed):**
+- All `utilities.math.*` functions
+- All `utilities.array-utils.*` functions
+- All `utilities.string-utils.*` functions
+- All `utilities.datetime.*` functions
+- All `utilities.json-transform.*` functions
+- All `utilities.csv.*`, `xml.*`, `validation.*`, etc.
+
+**The builder detects wrapper requirements automatically - just write inputs directly in YAML!**
+
+---
+
+## Tips
+
+- **Module search**: `npm run modules:search <keyword>` to find module paths
+- **Rest parameters**: Use `array-utils.*` versions, not `math.*` for max/min
+- **Wrapper modules**: AI SDK, drizzle-utils, JavaScript modules - automatically wrapped
+- **JavaScript code**: Use `javascript.execute` for custom context, `filterArray/mapArray` for simple operations
+- **Storage**: Always use `{{workflowId}}` in storage operations
+- **Variable references**: Use `{{variableName}}` or `{{variableName.property}}`
+- **ReturnValue**: Auto-set from last `outputAs`, or specify custom
+- **Credentials**: Add to `metadata.requiresCredentials` for documentation
+- **Plans directory**: Always save plans in `plans/` directory
+- **YAML types**: Use `{}` for objects, `[]` for arrays (not `"{}"` or `"[]"` strings)
+
+---
+
+## Full Example Session
+
+**User**: "Create a workflow to calculate statistics on numbers"
+
+**LLM Action 1**: Ask questions
+```typescript
+AskUserQuestion({
+  questions: [
+    { question: "When should this run?", header: "Trigger", ... },
+    { question: "Output format?", header: "Output", ... }
+  ]
+})
+```
+
+**User Answers**: "Manual", "JSON"
+
+**LLM Action 2**: Create plan
+```yaml
+# workflow-plan.yaml
+name: Calculate Number Statistics
+trigger: manual
+output: json
+steps:
+  - module: utilities.javascript.evaluateExpression
+    id: setup-numbers
+    inputs:
+      expression: "([1, 2, 3, 4, 5, 10, 20, 30])"
+    outputAs: numbers
+
+  - module: utilities.math.max
+    id: calc-max
+    inputs:
+      numbers: "{{numbers}}"
+    outputAs: maximum
+
+  - module: utilities.math.min
+    id: calc-min
+    inputs:
+      numbers: "{{numbers}}"
+    outputAs: minimum
+
+  - module: utilities.array-utils.average
+    id: calc-avg
+    inputs:
+      arr: "{{numbers}}"
+    outputAs: average
+
+  - module: utilities.aggregation.median
+    id: calc-median
+    inputs:
+      numbers: "{{numbers}}"
+    outputAs: median
+```
+
+**LLM Action 3**: Build workflow
+```bash
+npm run workflow:build plans/workflow-plan.yaml
+```
+
+**Output**:
+```
+✅ All steps validated
+✅ Workflow created and imported!
+   View at: http://localhost:3000/dashboard/workflows
+```
+
+**LLM Response**: "✅ Workflow 'Calculate Number Statistics' created with 5 steps! All modules validated. Ready to use at http://localhost:3000/dashboard/workflows"
+
+---
+
+## Advantages
+
+✅ **Simple** - One YAML file, one command
+✅ **Safe** - All validation automatic
+✅ **Fast** - Zero error iterations
+✅ **Clear** - YAML is readable
+✅ **Smart** - Auto-wraps params/options
+
+**Use workflow:build for all workflow generation!**

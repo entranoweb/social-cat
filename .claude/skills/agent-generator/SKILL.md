@@ -5,626 +5,323 @@ description: "YOU MUST USE THIS SKILL when the user wants to create an AI agent 
 
 # AI Agent Workflow Generator
 
+**Create AI agent workflows using simple YAML plans - one command, fully validated.**
+
+## ⚠️ CRITICAL: Use workflow:build
+
+Create a YAML plan and use:
+
+```bash
+npm run workflow:build plans/agent-plan.yaml
+```
+
+**All validation automatic - same as regular workflows!**
+
+---
+
 ## When to Use This Skill
 
-Use this skill when the user wants to create workflows featuring AI agents that can:
+Use when the user wants AI agents that can:
 - Have conversations (chat workflows)
-- Use tools autonomously (web search, calculations, API calls, etc.)
+- Use tools autonomously (web search, calculations, API calls)
 - Perform multi-step reasoning
 - Access 1282+ available tools across 140+ modules
 
-## AI Agent Modules Available
+---
 
-### Primary Agent Functions
+## AI Agent Plan Format
 
-**ai.ai-agent.runAgent** - Standard agent (non-streaming)
-```json
-{
-  "module": "ai.ai-agent.runAgent",
-  "inputs": {
-    "options": {
-      "prompt": "{{trigger.userMessage}}",
-      "model": "gpt-4o-mini",
-      "maxSteps": 10,
-      "temperature": 0.7,
-      "systemPrompt": "You are a helpful assistant...",
-      "toolOptions": { "useAll": true }
-    }
-  }
-}
+```yaml
+name: Agent Name
+description: What the agent does
+trigger: chat | chat-input | manual
+output: markdown | text | json
+steps:
+  - module: ai.ai-agent.runAgent
+    id: agent-step
+    inputs:
+      prompt: "{{trigger.userMessage}}"
+      model: gpt-4o-mini | claude-haiku-4-5-20251001
+      maxSteps: 10
+      temperature: 0.7
+      systemPrompt: "You are a helpful assistant..."
+      toolOptions:
+        useAll: true
+    outputAs: response
 ```
 
-**ai.ai-agent-stream.streamAgent** - Streaming agent with real-time updates
-```json
-{
-  "module": "ai.ai-agent-stream.streamAgent",
-  "inputs": {
-    "options": {
-      "prompt": "{{trigger.userMessage}}",
-      "model": "claude-haiku-4-5-20251001",
-      "maxSteps": 10,
-      "systemPrompt": "You are a helpful assistant..."
-    }
-  }
-}
-```
+**Key differences from regular workflows:**
+- Trigger usually `chat` for conversational agents
+- Output usually `markdown` or `text`
+- ReturnValue should access `.text` property: `{{response.text}}`
+- NO apiKey needed (auto-injected based on model)
 
-### Convenience Functions
+---
 
-- **ai.ai-agent.runWebAgent** - Pre-configured for web research
-- **ai.ai-agent.runCreativeAgent** - Pre-configured for creative tasks
-- **ai.ai-agent.runCommunicationAgent** - Pre-configured for messaging
+## Available Agent Modules
 
-## Current Model Names (November 2025 - Cheap Models Only)
+**Primary:**
+- `ai.ai-agent.runAgent` - Standard agent (non-streaming)
+- `ai.ai-agent-stream.streamAgent` - Streaming agent with real-time updates
 
-### Claude Models (Anthropic)
-- `claude-haiku-4-5-20251001` - Fastest & cheapest ($1/$5 per MTok) (**RECOMMENDED**)
-- `claude-sonnet-4-5-20250929` - Best balance ($3/$15 per MTok)
+**Convenience Functions:**
+- `ai.ai-agent.runWebAgent` - Pre-configured for web research
+- `ai.ai-agent.runCreativeAgent` - Pre-configured for creative tasks
+- `ai.ai-agent.runCommunicationAgent` - Pre-configured for messaging
 
-### OpenAI Models
-- `gpt-4o-mini` - Fast and cost-effective (**RECOMMENDED**)
-- `gpt-4-1-mini` - Latest GPT-4.1 mini
-- `gpt-4-1-nano` - Cheapest and fastest
+---
 
-**These are the November 2025 cheap models validated in auto-fix script. Auto-fix will correct old model names. NO EXPENSIVE MODELS ALLOWED.**
-
-## Critical Agent-Specific Rules
-
-### 1. Options Wrapper (NON-NEGOTIABLE)
-
-✅ **ALWAYS use `{ "options": { ... } }` for ALL AI agent functions**
-
-```json
-// ✅ CORRECT
-"inputs": {
-  "options": {
-    "prompt": "...",
-    "model": "gpt-4o-mini"
-  }
-}
-
-// ❌ WRONG - Will fail validation
-"inputs": {
-  "prompt": "...",
-  "model": "gpt-4o-mini"
-}
-```
-
-### 2. API Keys (AUTO-INJECTED - DO NOT INCLUDE)
-
-**SECURITY: Never include apiKey in workflow JSON!**
-
-The system automatically:
-- Detects model name (gpt-* or claude-*)
-- Determines provider (OpenAI or Anthropic)
-- Injects correct API key from credentials page at runtime
-
-```json
-// ✅ CORRECT - No apiKey field
-{
-  "options": {
-    "model": "gpt-4o-mini",
-    "prompt": "..."
-  }
-}
-
-// ❌ WRONG - Security risk, unnecessary
-{
-  "options": {
-    "apiKey": "{{credential.openai_api_key}}",  // DON'T DO THIS
-    "model": "gpt-4o-mini"
-  }
-}
-```
-
-### 3. Agent Parameters
+## Agent Parameters
 
 **Required:**
-- `prompt` - The user's input/goal
+- `prompt` - The user's input/request
 
-**Optional (with defaults):**
+**Optional (with smart defaults):**
 - `model` - Default: `claude-haiku-4-5-20251001` (cheapest)
+  - Recommended: `gpt-4o-mini` or `claude-haiku-4-5-20251001`
 - `maxSteps` - Default: 10, Range: 1-50
 - `temperature` - Default: 0.7, Range: 0-2
 - `systemPrompt` - Defines agent behavior
-- `conversationHistory` - For multi-turn conversations
 - `toolOptions` - Configure which tools agent can use
 
-### 4. Tool Options
+**Tool Options:**
 
-**Give agent ALL tools (recommended):**
-```json
-"toolOptions": {
-  "useAll": true
-}
+Give agent ALL tools:
+```yaml
+toolOptions:
+  useAll: true
 ```
 
-**Filter by category:**
-```json
-"toolOptions": {
-  "categories": ["web", "ai", "communication", "utilities"]
-}
+Filter by category:
+```yaml
+toolOptions:
+  categories: [web, utilities, communication]
 ```
 
-**Available categories:**
-- `web` - Search, fetch, scrape
-- `ai` - Text/image generation
-- `communication` - Email, Slack, Discord
-- `social` - Twitter, Reddit, etc.
-- `data` - Database, spreadsheets
-- `utilities` - Math, time, JSON, etc.
-
-**Specific tools only:**
-```json
-"toolOptions": {
-  "tools": ["fetchWebPage", "getCurrentDateTime", "calculate"]
-}
+Specific tools:
+```yaml
+toolOptions:
+  tools: [fetchWebPage, getCurrentDateTime, calculate]
 ```
 
-**With MCP servers:**
-```json
-"toolOptions": {
-  "useAll": true,
-  "useMCP": true,
-  "mcpServers": ["tavily-search", "brave-search"]
-}
+---
+
+## Example Plans
+
+### Simple Chat Agent
+
+```yaml
+name: General AI Assistant
+description: Chat with AI that can use tools
+trigger: chat
+output: markdown
+steps:
+  - module: ai.ai-agent.runAgent
+    id: chat
+    inputs:
+      prompt: "{{trigger.userMessage}}"
+      model: gpt-4o-mini
+      maxSteps: 10
+      systemPrompt: "You are a helpful AI assistant. Use tools when needed."
+      toolOptions:
+        useAll: true
+    outputAs: response
 ```
 
-### 5. Agent Return Value
+### Web Research Agent
 
-**Non-streaming agents** return `AgentRunResponse`:
-```json
-{
-  "returnValue": "{{agentResponse.text}}"  // Use .text for final answer
-}
+```yaml
+name: Research Assistant
+description: AI agent specialized in web research
+trigger: chat
+output: markdown
+steps:
+  - module: ai.ai-agent.runAgent
+    id: research
+    inputs:
+      prompt: "{{trigger.userMessage}}"
+      model: claude-haiku-4-5-20251001
+      maxSteps: 15
+      systemPrompt: "You are a research assistant. Search the web, analyze information, and provide comprehensive answers with sources."
+      toolOptions:
+        categories: [web, utilities]
+    outputAs: research
 ```
 
-**Streaming agents** return step-by-step data:
-```json
-{
-  "returnValue": "{{streamResponse}}"  // Contains full trace
-}
+### Agent with Data Processing
+
+```yaml
+name: Data Analysis Agent
+description: Fetch data and analyze with AI
+trigger: manual
+output: markdown
+steps:
+  - module: utilities.http.httpGet
+    id: fetch-data
+    inputs:
+      url: "https://api.example.com/data"
+    outputAs: apiData
+
+  - module: ai.ai-agent.runAgent
+    id: analyze
+    inputs:
+      prompt: "Analyze this data: {{apiData.data}}"
+      model: gpt-4o-mini
+      temperature: 0.3
+      systemPrompt: "You are a data analyst. Analyze the data and provide insights."
+      toolOptions:
+        categories: [utilities]
+    outputAs: analysis
 ```
 
-## Complete Agent Workflow Structure
+### Multi-Step Research Agent
 
-```json
-{
-  "version": "1.0",
-  "name": "AI Agent Workflow Name",
-  "description": "What the agent does",
+```yaml
+name: Research and Summarize
+description: Research topic then create summary
+trigger: chat-input
+output: markdown
+steps:
+  - module: ai.ai-agent.runAgent
+    id: research
+    inputs:
+      prompt: "Research this topic thoroughly: {{trigger.topic}}"
+      model: claude-haiku-4-5-20251001
+      maxSteps: 20
+      systemPrompt: "You are a researcher. Use web search to gather comprehensive information."
+      toolOptions:
+        useAll: true
+    outputAs: researchResults
 
-  "trigger": {
-    "type": "chat",  // For conversational agents
-    "config": {
-      "inputVariable": "userMessage"  // Required for chat trigger
-    }
-  },
-
-  "config": {
-    "steps": [
-      {
-        "id": "run_agent",
-        "module": "ai.ai-agent.runAgent",
-        "inputs": {
-          "options": {
-            "prompt": "{{trigger.userMessage}}",
-            "model": "gpt-4o-mini",
-            "maxSteps": 10,
-            "temperature": 0.7,
-            "systemPrompt": "You are a helpful AI assistant with access to various tools. Use tools when needed to accomplish tasks.",
-            "toolOptions": {
-              "useAll": true
-            }
-          }
-        },
-        "outputAs": "agentResponse"
-      }
-    ],
-    "returnValue": "{{agentResponse.text}}",
-    "outputDisplay": {
-      "type": "markdown"  // For chat workflows
-    }
-  },
-
-  "metadata": {
-    "requiresCredentials": [
-      "openai_api_key"  // or "anthropic_api_key" depending on model
-    ]
-  }
-}
+  - module: ai.ai-sdk.generateText
+    id: summarize
+    inputs:
+      prompt: "Create a concise summary:\n{{researchResults.text}}"
+      model: gpt-4o-mini
+      maxTokens: 500
+    outputAs: summary
 ```
 
-## Common Agent Workflow Patterns
+---
 
-### Pattern 1: Simple Chat Agent
+## Building Agent Workflows
 
-```json
-{
-  "version": "1.0",
-  "name": "General Purpose AI Assistant",
-  "description": "Chat with an AI that can use tools",
-  "trigger": {
-    "type": "chat",
-    "config": { "inputVariable": "userMessage" }
-  },
-  "config": {
-    "steps": [{
-      "id": "chat",
-      "module": "ai.ai-agent.runAgent",
-      "inputs": {
-        "options": {
-          "prompt": "{{trigger.userMessage}}",
-          "model": "gpt-4o-mini",
-          "toolOptions": { "useAll": true }
-        }
-      },
-      "outputAs": "response"
-    }],
-    "returnValue": "{{response.text}}",
-    "outputDisplay": { "type": "markdown" }
-  },
-  "metadata": {
-    "requiresCredentials": ["openai_api_key"]
-  }
-}
+**Same process as regular workflows:**
+
+1. Create YAML plan in `plans/` directory
+2. Run: `npm run workflow:build plans/agent-plan.yaml`
+3. Done!
+
+**All 12 validation layers apply:**
+- ✅ Module validation
+- ✅ Parameter validation
+- ✅ Auto-wrapping (options wrapper automatic)
+- ✅ Trigger validation
+- ✅ ReturnValue validation
+- ✅ Credential analysis
+- ✅ Dry-run testing
+- ✅ Everything validated before import
+
+---
+
+## Common Agent Issues
+
+### ❌ Including API Key
+```yaml
+# ❌ Wrong - don't include apiKey:
+inputs:
+  prompt: "..."
+  model: gpt-4o-mini
+  apiKey: "{{credential.openai_api_key}}"  # Remove this!
 ```
 
-### Pattern 2: Specialized Research Agent
+**Fix:** Remove apiKey - it's auto-injected based on model name
 
-```json
-{
-  "version": "1.0",
-  "name": "Web Research Assistant",
-  "description": "AI agent specialized in web research and analysis",
-  "trigger": {
-    "type": "chat",
-    "config": { "inputVariable": "userMessage" }
-  },
-  "config": {
-    "steps": [{
-      "id": "research",
-      "module": "ai.ai-agent.runAgent",
-      "inputs": {
-        "options": {
-          "prompt": "{{trigger.userMessage}}",
-          "model": "claude-sonnet-4-5-20250929",
-          "maxSteps": 15,
-          "systemPrompt": "You are a research assistant. Search the web, analyze information, and provide comprehensive answers with sources.",
-          "toolOptions": {
-            "categories": ["web", "utilities"]
-          }
-        }
-      },
-      "outputAs": "research"
-    }],
-    "returnValue": "{{research.text}}",
-    "outputDisplay": { "type": "markdown" }
-  },
-  "metadata": {
-    "requiresCredentials": ["anthropic_api_key"]
-  }
-}
+### ❌ Wrong ReturnValue
+```yaml
+# ❌ Wrong:
+returnValue: "{{response}}"  # Returns whole object
+
+# ✅ Correct:
+returnValue: "{{response.text}}"  # Returns just the text
 ```
 
-### Pattern 3: Agent with Data Processing
+### ❌ Missing Chat Trigger Config
+```yaml
+# ❌ Wrong:
+trigger: chat
 
-```json
-{
-  "version": "1.0",
-  "name": "Data Analysis Agent",
-  "description": "Fetch data and analyze with AI",
-  "trigger": { "type": "manual", "config": {} },
-  "config": {
-    "steps": [
-      {
-        "id": "fetch_data",
-        "module": "web.http.get",
-        "inputs": {
-          "url": "https://api.example.com/data"
-        },
-        "outputAs": "apiData"
-      },
-      {
-        "id": "analyze",
-        "module": "ai.ai-agent.runAgent",
-        "inputs": {
-          "options": {
-            "prompt": "Analyze this data and provide insights: {{apiData}}",
-            "model": "gpt-4o-mini",
-            "temperature": 0.3,
-            "systemPrompt": "You are a data analyst. Analyze the provided data and generate actionable insights.",
-            "toolOptions": {
-              "categories": ["utilities"]
-            }
-          }
-        },
-        "outputAs": "analysis"
-      }
-    ],
-    "returnValue": "{{analysis.text}}",
-    "outputDisplay": { "type": "markdown" }
-  },
-  "metadata": {
-    "requiresCredentials": ["openai_api_key"]
-  }
-}
+# ✅ Correct (auto-added by builder):
+trigger: chat
+# Builder adds: config.inputVariable = "userMessage"
 ```
 
-### Pattern 4: Multi-Step Agent Workflow
+---
 
-```json
-{
-  "version": "1.0",
-  "name": "Research and Summarize",
-  "description": "Research a topic, then create a summary",
-  "trigger": {
-    "type": "chat-input",
-    "config": {
-      "fields": [{
-        "id": "topic",
-        "label": "Topic to Research",
-        "key": "topic",
-        "type": "text",
-        "required": true
-      }]
-    }
-  },
-  "config": {
-    "steps": [
-      {
-        "id": "research",
-        "module": "ai.ai-agent.runAgent",
-        "inputs": {
-          "options": {
-            "prompt": "Research this topic thoroughly: {{trigger.topic}}",
-            "model": "claude-sonnet-4-5-20250929",
-            "maxSteps": 20,
-            "systemPrompt": "You are a researcher. Use web search and other tools to gather comprehensive information.",
-            "toolOptions": { "useAll": true }
-          }
-        },
-        "outputAs": "researchResults"
-      },
-      {
-        "id": "summarize",
-        "module": "ai.ai-sdk.generateText",
-        "inputs": {
-          "options": {
-            "prompt": "Create a concise summary of this research:\n\n{{researchResults.text}}",
-            "model": "gpt-4o-mini",
-            "maxTokens": 500
-          }
-        },
-        "outputAs": "summary"
-      }
-    ],
-    "returnValue": "{{summary.content}}",
-    "outputDisplay": { "type": "markdown" }
-  },
-  "metadata": {
-    "requiresCredentials": ["anthropic_api_key", "openai_api_key"]
-  }
-}
+## Tips
+
+- **No apiKey needed** - Auto-injected based on model
+- **Use .text for returnValue** - `{{response.text}}` not `{{response}}`
+- **Chat triggers** - Auto-configured with inputVariable
+- **Tool selection** - Start with `useAll: true`
+- **System prompts** - Define role and when to use tools
+- **Temperature** - 0.7 is good default
+- **maxSteps** - 10-15 for most tasks
+
+---
+
+## Model Selection Guide
+
+**Cheap & Fast (Recommended):**
+- `gpt-4o-mini` - OpenAI, fast, cost-effective
+- `claude-haiku-4-5-20251001` - Anthropic, cheapest
+
+**Better Quality:**
+- `claude-sonnet-4-5-20250929` - Best balance of quality/cost
+
+**Choose based on:**
+- Budget: Use Haiku or gpt-4o-mini
+- Quality needs: Use Sonnet for complex reasoning
+- Speed: All cheap models are fast
+
+---
+
+## Complete Example
+
+```yaml
+# plans/universal-assistant.yaml
+name: Universal AI Assistant
+description: General purpose AI with full tool access
+trigger: chat
+output: markdown
+category: ai-agents
+tags: [chat, ai, tools]
+steps:
+  - module: ai.ai-agent.runAgent
+    id: agent
+    inputs:
+      prompt: "{{trigger.userMessage}}"
+      model: gpt-4o-mini
+      maxSteps: 15
+      temperature: 0.7
+      systemPrompt: |
+        You are a helpful AI assistant with access to various tools.
+        Use tools when needed to provide accurate, up-to-date information.
+        Be concise but thorough in your responses.
+      toolOptions:
+        useAll: true
+    outputAs: agentResponse
 ```
 
-## Validation & Import Process
-
-**REQUIRED STEPS - Run in order:**
-
+**Build it:**
 ```bash
-# 1. Auto-fix common issues
-npx tsx scripts/auto-fix-workflow.ts workflow/{name}.json --write
-
-# 2. Validate structure
-npm run validate workflow/{name}.json
-
-# 3. Test execution
-npx tsx scripts/test-workflow.ts workflow/{name}.json
-
-# 4. Import to database
-npx tsx scripts/import-workflow.ts workflow/{name}.json
+npm run workflow:build plans/universal-assistant.yaml
 ```
 
-## Auto-Fix Capabilities for Agents
+**Result:**
+- ✅ All validations pass
+- ✅ Dry-run succeeds
+- ✅ Imported to database
+- ✅ Ready to use!
 
-The auto-fix script handles these agent-specific issues:
-
-1. **Options wrapper** - Adds missing `{ "options": { ... } }` wrapper
-2. **Model names** - Fixes old model names (e.g., "claude-3-5-sonnet" → "claude-sonnet-4-5-20250929")
-3. **Temperature range** - Clamps to 0-2
-4. **maxSteps validation** - Ensures 1-50 range
-5. **toolOptions format** - Converts invalid formats to correct structure
-6. **Return value** - Adds `.text` accessor for agent responses
-7. **Credential detection** - Adds required credentials to metadata
-
-## Common Mistakes & Fixes
-
-| Mistake | Fix |
-|---------|-----|
-| No options wrapper | Auto-fix adds it automatically |
-| Old model name | Auto-fix suggests current models |
-| Including apiKey | Remove it - auto-injected at runtime |
-| Wrong temperature | Auto-fix clamps to 0-2 range |
-| Missing systemPrompt | Optional, but recommended for better results |
-| Wrong toolOptions format | Auto-fix converts to correct structure |
-| Missing .text accessor | Auto-fix adds it to returnValue |
-
-## Tips for Great Agent Workflows
-
-### 1. System Prompts Matter
-
-Good system prompts define:
-- Agent's role and expertise
-- When to use tools vs. direct answers
-- Output format preferences
-- Constraints and guidelines
-
-```json
-"systemPrompt": "You are a helpful research assistant. When users ask questions, search the web for current information before answering. Cite your sources and be concise."
-```
-
-### 2. Choose the Right Model
-
-- **Quick tasks, cost-sensitive**: `gpt-4o-mini` (RECOMMENDED) or `claude-haiku-4-5-20251001`
-- **Complex reasoning**: `claude-sonnet-4-5-20250929`
-- **Cheapest option**: `gpt-4-1-nano` or `claude-haiku-4-5-20251001`
-
-### 3. Tool Selection Strategy
-
-- **Start with `useAll: true`** - Let agent decide
-- **Filter by category** - If agent doesn't need all tools
-- **Specific tools** - For highly focused tasks
-
-### 4. maxSteps Guidance
-
-- Simple queries: 5-10 steps
-- Research tasks: 15-20 steps
-- Complex workflows: 20-50 steps
-
-More steps = more tool calls = longer execution time and higher cost
-
-### 5. Temperature Settings
-
-- **0.0-0.3** - Focused, deterministic (data analysis, code)
-- **0.7** - Balanced (default, good for most tasks)
-- **1.0-2.0** - Creative (writing, brainstorming)
-
-## Debugging Agent Workflows
-
-### Agent Not Using Tools
-
-**Problem**: Agent answers directly without using tools
-
-**Solutions**:
-1. Make system prompt more explicit: "Always use tools when available"
-2. Increase maxSteps
-3. Use more capable model (Sonnet over Haiku)
-
-### Agent Stops Early
-
-**Problem**: Agent hits maxSteps limit
-
-**Solutions**:
-1. Increase maxSteps (default is 10)
-2. Simplify the task
-3. Break into multiple steps
-
-### Wrong Model Error
-
-**Problem**: "invalid x-api-key" or "model not found"
-
-**Solutions**:
-1. Check model name spelling
-2. Verify correct credential is saved (check credentials page)
-3. Run auto-fix to detect correct model name
-
-### Tool Errors
-
-**Problem**: Agent tries to use unavailable tools
-
-**Solutions**:
-1. Check toolOptions configuration
-2. Verify required credentials are available
-3. Check if MCP servers are running (if using MCP)
-
-## Chat Trigger Special Behavior
-
-Chat trigger workflows have automatic features:
-
-1. **Auto-return** - Final step's text output auto-streams to UI
-2. **Conversation history** - System maintains chat history automatically
-3. **Streaming** - Use `ai-agent-stream.streamAgent` for real-time updates
-4. **inputVariable** - Must be set to "userMessage" for trigger data
-
-```json
-"trigger": {
-  "type": "chat",
-  "config": {
-    "inputVariable": "userMessage"  // Required!
-  }
-}
-```
-
-## File Organization
-
-Save agent workflows in:
-```
-workflow/
-  chat-agent-{name}.json       # Chat-triggered agents
-  manual-agent-{name}.json     # Manual-triggered agents
-  scheduled-agent-{name}.json  # Cron-triggered agents
-```
-
-## Quick Reference Card
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ AI AGENT WORKFLOW QUICK REFERENCE                           │
-├─────────────────────────────────────────────────────────────┤
-│ Module: ai.ai-agent.runAgent                                │
-│ Wrapper: { "options": { ... } }                             │
-│ API Key: AUTO-INJECTED (don't include)                      │
-│ Models: gpt-4o-mini, claude-haiku-4-5-20251001             │
-│ Return: {{response.text}}                                   │
-│ Tools: { "useAll": true } or categories                     │
-│ Steps: 1-50 (default 10)                                    │
-│ Temp: 0-2 (default 0.7)                                     │
-├─────────────────────────────────────────────────────────────┤
-│ VALIDATION PIPELINE                                         │
-│ 1. npx tsx scripts/auto-fix-workflow.ts {file} --write     │
-│ 2. npm run validate {file}                                  │
-│ 3. npx tsx scripts/test-workflow.ts {file}                  │
-│ 4. npx tsx scripts/import-workflow.ts {file}                │
-└─────────────────────────────────────────────────────────────┘
-```
-
-## Example: Complete Chat Agent Workflow
-
-Here's a complete, copy-paste ready chat agent:
-
-```json
-{
-  "version": "1.0",
-  "name": "Universal AI Assistant",
-  "description": "Chat with an AI that can use 1282+ tools including web search, calculations, and more",
-  "trigger": {
-    "type": "chat",
-    "config": {
-      "inputVariable": "userMessage"
-    }
-  },
-  "config": {
-    "steps": [
-      {
-        "id": "run_agent",
-        "module": "ai.ai-agent.runAgent",
-        "inputs": {
-          "options": {
-            "prompt": "{{trigger.userMessage}}",
-            "model": "gpt-4o-mini",
-            "maxSteps": 15,
-            "temperature": 0.7,
-            "systemPrompt": "You are a helpful AI assistant with access to various tools. Use tools when needed to provide accurate, up-to-date information. Be concise but thorough.",
-            "toolOptions": {
-              "useAll": true
-            }
-          }
-        },
-        "outputAs": "agentResponse"
-      }
-    ],
-    "returnValue": "{{agentResponse.text}}",
-    "outputDisplay": {
-      "type": "markdown"
-    }
-  },
-  "metadata": {
-    "requiresCredentials": [
-      "openai_api_key"
-    ]
-  }
-}
-```
-
-Save this as `workflow/chat-agent-universal.json` and run the validation pipeline!
+**Use workflow:build for all agent creation - simple, validated, perfect!**

@@ -27,6 +27,31 @@ export function getModuleRegistry(): ModuleCategory[] {
       name: 'ai',
       modules: [
         {
+          name: 'agent-tools-library',
+          functions: [
+            {
+              name: 'getAgentToolsByCategory',
+              description: "Get agent tools by category",
+              signature: 'getAgentToolsByCategory(categories)',
+            },
+            {
+              name: 'getAgentTools',
+              description: "Get specific tools by name",
+              signature: 'getAgentTools(toolNames)',
+            },
+            {
+              name: 'getAllAgentTools',
+              description: "Get all agent tools",
+              signature: 'getAllAgentTools()',
+            },
+            {
+              name: 'getMCPAgentTools',
+              description: "Get MCP tools for agents",
+              signature: 'getMCPAgentTools(mcpServers?)',
+            },
+          ],
+        },
+        {
           name: 'ai-agent-stream',
           functions: [
             {
@@ -65,24 +90,24 @@ export function getModuleRegistry(): ModuleCategory[] {
               signature: 'runAgent(options)',
             },
             {
-              name: 'runSocialAgent',
-              description: "Convenience function: Run agent with social media tools",
-              signature: 'runSocialAgent(prompt, credentials?)',
+              name: 'runWebAgent',
+              description: "Convenience function: Run agent with web tools (search, fetch content)",
+              signature: 'runWebAgent(prompt)',
+            },
+            {
+              name: 'runCreativeAgent',
+              description: "Convenience function: Run agent with AI generation tools",
+              signature: 'runCreativeAgent(prompt)',
             },
             {
               name: 'runCommunicationAgent',
               description: "Convenience function: Run agent with communication tools",
-              signature: 'runCommunicationAgent(prompt, credentials?)',
-            },
-            {
-              name: 'runDataAgent',
-              description: "Convenience function: Run agent with data/analysis tools",
-              signature: 'runDataAgent(prompt, credentials?)',
+              signature: 'runCommunicationAgent(prompt)',
             },
             {
               name: 'runUniversalAgent',
               description: "Convenience function: Run agent with all available tools",
-              signature: 'runUniversalAgent(prompt, credentials?, maxTools?)',
+              signature: 'runUniversalAgent(prompt)',
             },
           ],
         },
@@ -2283,14 +2308,15 @@ export function getModuleRegistry(): ModuleCategory[] {
           functions: [
             {
               name: 'queryWhereIn',
-              description: "Drizzle Utils Module",
+              description: "Query IDs from a table where a column value is in an array",
               signature: 'queryWhereIn(params)',
-              example: "// Check which tweet IDs have already been replied to\nconst repliedIds = await queryWhereIn({\n  tableName: 'tweet_replies',\n  column: 'original_tweet_id',\n  values: ['123', '456', '789'],\n  selectColumn: 'original_tweet_id'\n});\n// Returns: ['123', '456'] (if those were found)",
+              example: "// Check which tweet IDs have already been replied to (workflow-scoped)\nconst repliedIds = await queryWhereIn({\n  workflowId: '{{workflowId}}',\n  tableName: 'replied_tweets',\n  column: 'tweet_id',\n  values: ['123', '456', '789']\n});\n// Returns: ['123', '456'] (if those were found)\n// Table used: workflow_storage_{workflowId}_replied_tweets",
             },
             {
               name: 'insertRecord',
               description: "Insert a single record into a table",
               signature: 'insertRecord(params)',
+              example: "// Workflow-scoped storage with auto-expiration\nawait insertRecord({\n  workflowId: '{{workflowId}}',\n  tableName: 'replied_tweets',\n  data: {\n    tweet_id: '123456',\n    replied_at: new Date(),\n    reply_text: 'Great point!'\n  },\n  expiresInDays: 7\n});\n// Table: workflow_storage_{workflowId}_replied_tweets\n// Auto-deleted after 7 days",
             },
             {
               name: 'insertRecords',
@@ -4229,6 +4255,41 @@ export function getModuleRegistry(): ModuleCategory[] {
       ],
     },
     {
+      name: 'mcp',
+      modules: [
+        {
+          name: 'mcp-manager',
+          functions: [
+            {
+              name: 'connectToMCPServers',
+              description: "Connect to multiple MCP servers",
+              signature: 'connectToMCPServers(params)',
+            },
+            {
+              name: 'disconnectMCPServers',
+              description: "Disconnect from MCP servers",
+              signature: 'disconnectMCPServers(params)',
+            },
+            {
+              name: 'listMCPServers',
+              description: "List all configured MCP servers",
+              signature: 'listMCPServers()',
+            },
+            {
+              name: 'getMCPServersStatus',
+              description: "Get status of connected MCP servers",
+              signature: 'getMCPServersStatus()',
+            },
+            {
+              name: 'isMCPServerConnected',
+              description: "Check if an MCP server is connected",
+              signature: 'isMCPServerConnected(params)',
+            },
+          ],
+        },
+      ],
+    },
+    {
       name: 'payments',
       modules: [
         {
@@ -4807,12 +4868,12 @@ export function getModuleRegistry(): ModuleCategory[] {
             {
               name: 'intersection',
               description: "Get intersection of multiple arrays",
-              signature: 'intersection(arrays)',
+              signature: 'intersection(...arrays)',
             },
             {
               name: 'union',
               description: "Get union of multiple arrays (unique values from all)",
-              signature: 'union(arrays)',
+              signature: 'union(...arrays)',
             },
             {
               name: 'difference',
@@ -4897,7 +4958,7 @@ export function getModuleRegistry(): ModuleCategory[] {
             {
               name: 'zip',
               description: "Zip multiple arrays together",
-              signature: 'zip(arrays)',
+              signature: 'zip(...arrays)',
             },
             {
               name: 'zipToObjects',
@@ -5083,7 +5144,7 @@ export function getModuleRegistry(): ModuleCategory[] {
             {
               name: 'coalesce',
               description: "Control Flow Utilities Module",
-              signature: 'coalesce(values)',
+              signature: 'coalesce(...values)',
             },
             {
               name: 'defaultValue',
@@ -5134,6 +5195,24 @@ export function getModuleRegistry(): ModuleCategory[] {
               name: 'isDefined',
               description: "Check if value is defined (not null or undefined)",
               signature: 'isDefined(value)',
+            },
+            {
+              name: 'ifElse',
+              description: "If-else branching with explicit true/false paths",
+              signature: 'ifElse(condition, ifTrue, ifFalse)',
+              example: "ifElse(score > 90, \"A\", \"B\")",
+            },
+            {
+              name: 'partitionByCondition',
+              description: "Filter array and execute different logic based on condition",
+              signature: 'partitionByCondition(items, field, operator, value)',
+              example: "partitionByCondition(items, \"score\", \">\", 80) => {matched: [...], unmatched: [...]}",
+            },
+            {
+              name: 'tryCatch',
+              description: "Try-catch error handling wrapper",
+              signature: 'tryCatch(attemptValue, errorValue, errorCheck?)',
+              example: "tryCatch(result, {error: \"Failed\"})",
             },
           ],
         },
@@ -5673,12 +5752,12 @@ export function getModuleRegistry(): ModuleCategory[] {
             {
               name: 'joinPaths',
               description: "Join paths",
-              signature: 'joinPaths(paths)',
+              signature: 'joinPaths(...paths)',
             },
             {
               name: 'resolvePath',
               description: "Resolve absolute path",
-              signature: 'resolvePath(paths)',
+              signature: 'resolvePath(...paths)',
             },
             {
               name: 'streamCopyFile',
@@ -5893,7 +5972,7 @@ export function getModuleRegistry(): ModuleCategory[] {
             {
               name: 'deepMerge',
               description: "Deep merge two objects",
-              signature: 'deepMerge(target, sources)',
+              signature: 'deepMerge(target, ...sources)',
             },
             {
               name: 'get',
@@ -6018,12 +6097,12 @@ export function getModuleRegistry(): ModuleCategory[] {
             {
               name: 'max',
               description: "Get the maximum of two or more numbers",
-              signature: 'max(numbers)',
+              signature: 'max(...numbers)',
             },
             {
               name: 'min',
               description: "Get the minimum of two or more numbers",
-              signature: 'min(numbers)',
+              signature: 'min(...numbers)',
             },
             {
               name: 'power',

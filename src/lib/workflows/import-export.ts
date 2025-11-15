@@ -12,10 +12,12 @@ export interface WorkflowExport {
   name: string;
   description: string;
   trigger?: {
-    type: 'manual' | 'cron' | 'webhook' | 'telegram' | 'discord' | 'chat' | 'chat-input';
+    type: 'manual' | 'cron' | 'webhook' | 'telegram' | 'discord' | 'chat' | 'chat-input' | 'gmail' | 'outlook';
     config: Record<string, unknown>;
   };
   config: {
+    timeout?: number;
+    retries?: number;
     steps: Array<{
       id: string;
       module: string;
@@ -48,6 +50,8 @@ export function exportWorkflow(
   name: string,
   description: string,
   config: {
+    timeout?: number;
+    retries?: number;
     steps: Array<{
       id: string;
       module: string;

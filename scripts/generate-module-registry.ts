@@ -96,6 +96,7 @@ function parseFunction(
     const paramName = param.name.getText(sourceFile);
     const paramType = param.type ? param.type.getText(sourceFile) : 'unknown';
     const required = !param.questionToken && !param.initializer;
+    const isRest = !!param.dotDotDotToken;  // Detect rest parameters (...param)
 
     parameters.push({
       name: paramName,
@@ -103,11 +104,14 @@ function parseFunction(
       required,
     });
 
-    // For signature, show object destructuring or simple param name
+    // For signature, show object destructuring, rest params, or simple param name
     if (ts.isObjectBindingPattern(param.name)) {
       // Object destructuring: ({ a, b, c })
       const props = param.name.elements.map(e => e.name.getText(sourceFile));
       paramNames.push(`{ ${props.join(', ')} }`);
+    } else if (isRest) {
+      // Rest parameter: ...numbers
+      paramNames.push(`...${paramName}`);
     } else {
       // Simple parameter
       paramNames.push(paramName + (required ? '' : '?'));

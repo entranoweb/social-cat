@@ -269,7 +269,7 @@ export async function mapArray(options: {
 
       const script = new vm.Script(wrappedCode, { filename: `map-${i}.js` });
       const context_vm = vm.createContext(sandbox);
-      const result = script.runInContext(context_vm, { timeout: timeout / items.length, displayErrors: true });
+      const result = script.runInContext(context_vm, { timeout: Math.floor(timeout / items.length), displayErrors: true });
       results.push(result);
     }
 
@@ -298,7 +298,7 @@ export async function filterArray(options: {
       const wrappedCode = `(function() { 'use strict'; ${code} })()`;
       const script = new vm.Script(wrappedCode, { filename: `filter-${i}.js` });
       const context_vm = vm.createContext(sandbox);
-      const shouldInclude = script.runInContext(context_vm, { timeout: timeout / items.length, displayErrors: true });
+      const shouldInclude = script.runInContext(context_vm, { timeout: Math.floor(timeout / items.length), displayErrors: true });
       if (shouldInclude) results.push(items[i]);
     }
 
@@ -328,7 +328,7 @@ export async function reduceArray(options: {
       const wrappedCode = `(function() { 'use strict'; ${code} })()`;
       const script = new vm.Script(wrappedCode, { filename: `reduce-${i}.js` });
       const context_vm = vm.createContext(sandbox);
-      accumulator = script.runInContext(context_vm, { timeout: timeout / items.length, displayErrors: true });
+      accumulator = script.runInContext(context_vm, { timeout: Math.floor(timeout / items.length), displayErrors: true });
     }
 
     return accumulator;
