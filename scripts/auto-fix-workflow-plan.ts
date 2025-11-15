@@ -88,87 +88,77 @@ const MODULE_ALIASES: Record<string, string> = {
 };
 
 /**
- * Smart parameter mapping - learns from common mistakes
+ * Common parameter name variations for auto-mapping
  */
-const PARAMETER_MAPPINGS: Record<string, Record<string, string>> = {
-  // JSON transform
-  'utilities.json-transform.stringifyJson': {
-    'obj': 'data',
-    'object': 'data',
-    'value': 'data',
-  },
-  'utilities.json-transform.parseJson': {
-    'str': 'jsonString',
-    'string': 'jsonString',
-    'json': 'jsonString',
-  },
-  'utilities.json-transform.pick': {
-    'obj': 'object',
-    'data': 'object',
-  },
+const COMMON_VARIATIONS: Record<string, string[]> = {
+  // Data/Object variations
+  'data': ['obj', 'object', 'value', 'input'],
+  'obj': ['object', 'data'],
+  'object': ['obj', 'data'],
 
-  // String utils
-  'utilities.string-utils.toSlug': {
-    'str': 'text',
-    'string': 'text',
-  },
-  'utilities.string-utils.truncate': {
-    'length': 'maxLength',
-    'len': 'maxLength',
-  },
+  // String variations
+  'text': ['str', 'string', 'content'],
+  'str': ['string', 'text'],
+  'string': ['str', 'text'],
 
-  // Array utils
-  'utilities.array-utils.first': {
-    'n': 'count',
-    'limit': 'count',
-  },
-  'utilities.array-utils.last': {
-    'n': 'count',
-    'limit': 'count',
-  },
-  'utilities.array-utils.chunk': {
-    'items': 'array',
-  },
-  'utilities.array-utils.sortBy': {
-    'items': 'array',
-  },
-  'utilities.array-utils.groupBy': {
-    'items': 'array',
-  },
+  // Number variations
+  'value': ['num', 'number', 'val'],
+  'num': ['number', 'value'],
+  'number': ['num', 'value'],
 
-  // Math utils
-  'utilities.math.round': {
-    'num': 'value',
-    'number': 'value',
-  },
-  'utilities.math.ceil': {
-    'num': 'value',
-    'number': 'value',
-  },
-  'utilities.math.floor': {
-    'num': 'value',
-    'number': 'value',
-  },
-  'utilities.math.abs': {
-    'num': 'value',
-    'number': 'value',
-  },
-  'utilities.math.sqrt': {
-    'num': 'value',
-    'number': 'value',
-  },
+  // Array variations
+  'array': ['arr', 'items', 'list'],
+  'arr': ['array', 'items'],
+  'items': ['array', 'arr'],
 
-  // Control flow
-  'utilities.control-flow.conditional': {
-    'trueValue': 'trueVal',
-    'falseValue': 'falseVal',
-  },
+  // Count/Size variations
+  'count': ['n', 'num', 'size', 'length', 'limit'],
+  'maxLength': ['length', 'max', 'limit'],
 
-  // Aggregation
-  'utilities.aggregation.percentile': {
-    'percentile': 'percent',
-    'p': 'percent',
-  },
+  // JSON variations
+  'jsonString': ['str', 'string', 'json'],
+
+  // Boolean variations
+  'condition': ['cond', 'test', 'predicate'],
+  'trueVal': ['trueValue', 'ifTrue'],
+  'falseVal': ['falseValue', 'ifFalse'],
+
+  // Key/Field variations
+  'key': ['field', 'prop', 'property'],
+  'keys': ['fields', 'props', 'properties'],
+
+  // Percent variations
+  'percent': ['percentile', 'p'],
+};
+
+/**
+ * Generate parameter mappings dynamically for a module
+ */
+function generateParameterMappings(
+  expectedParams: string[]
+): Record<string, string> {
+  const mappings: Record<string, string> = {};
+
+  for (const actualParam of expectedParams) {
+    // Check if this parameter has common variations
+    const variations = COMMON_VARIATIONS[actualParam];
+    if (variations) {
+      for (const variation of variations) {
+        mappings[variation] = actualParam;
+      }
+    }
+  }
+
+  return mappings;
+}
+
+/**
+ * Manual parameter mappings for edge cases (rarely needed - most are auto-discovered)
+ * Only add here if the auto-discovery doesn't work for a specific case
+ */
+const MANUAL_PARAMETER_MAPPINGS: Record<string, Record<string, string>> = {
+  // Currently empty - auto-discovery handles everything!
+  // Add manual overrides here only if absolutely necessary
 };
 
 /**
@@ -332,14 +322,23 @@ function autoFixStep(step: StepPlan): FixResult {
   const expectedParams = parsedModule.parameters.map(p => p.name);
   const requiredParams = parsedModule.parameters.filter(p => p.required).map(p => p.name);
 
-  const paramMappings = PARAMETER_MAPPINGS[step.module] || {};
+  // Generate parameter mappings dynamically based on expected parameters
+  const autoMappings = generateParameterMappings(expectedParams);
+  const manualMappings = MANUAL_PARAMETER_MAPPINGS[step.module] || {};
+  const paramMappings = { ...autoMappings, ...manualMappings }; // Manual overrides auto
+
   const fixedInputs: Record<string, unknown> = {};
   const mappedParams: string[] = [];
 
   // Map incorrect parameter names to correct ones
   for (const [providedName, value] of Object.entries(inputs)) {
-    // Check if this is a known incorrect name
-    if (paramMappings[providedName]) {
+    // First, check if parameter is already correct (don't rename correct params!)
+    if (expectedParams.includes(providedName)) {
+      // Already correct - keep it
+      fixedInputs[providedName] = value;
+    }
+    // Then check if this is a known incorrect name that needs mapping
+    else if (paramMappings[providedName]) {
       const correctName = paramMappings[providedName];
       // Only set if not already present (avoid duplicates)
       if (!fixedInputs[correctName]) {
@@ -347,11 +346,9 @@ function autoFixStep(step: StepPlan): FixResult {
         mappedParams.push(`"${providedName}" → "${correctName}"`);
         fixed = true;
       }
-    } else if (expectedParams.includes(providedName)) {
-      // Already correct
-      fixedInputs[providedName] = value;
-    } else {
-      // Unknown parameter - try fuzzy matching
+    }
+    // Finally, try fuzzy matching for typos
+    else {
       const closestMatch = findClosestMatch(providedName, expectedParams);
       if (closestMatch && levenshteinDistance(providedName, closestMatch) <= 2) {
         // Only set if not already present (avoid duplicates)
