@@ -1,5 +1,9 @@
 version: '3.8'
 
+# B0T Platform Production Deployment
+# Next.js: 15.5.9
+# Updated: 2025-12-14
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -38,6 +42,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - BUILD_DATE=2025-12-14
+        - VCS_REF=deploy/bot
     container_name: b0t-app
     ports:
       - "${APP_PORT:-3123}:3123"
@@ -70,6 +77,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        - BUILD_DATE=2025-12-14
+        - VCS_REF=deploy/bot
     container_name: b0t-worker
     command: ["node", "dist/worker.js"]
     environment:
